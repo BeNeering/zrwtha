@@ -1,11 +1,10 @@
 CLASS zrwtha_cl_wsi_obj_shlp_psp DEFINITION
   PUBLIC
-  INHERITING FROM /benmsg/cl_wsi_obj_shlp
+  INHERITING FROM zrwtha_cl_wsi_obj_shlp_root
   FINAL
   CREATE PUBLIC .
 
   PUBLIC SECTION.
-    METHODS /benmsg/if_rest_shlp~get_search_help REDEFINITION.
   PROTECTED SECTION.
     METHODS modify_search_help REDEFINITION.
     METHODS set_default_select_options REDEFINITION .
@@ -45,29 +44,6 @@ CLASS zrwtha_cl_wsi_obj_shlp_psp IMPLEMENTATION.
 
       CATCH cx_sy_itab_line_not_found.
         " its fine to do nothing here
-    ENDTRY.
-  ENDMETHOD.
-
-  METHOD /benmsg/if_rest_shlp~get_search_help.
-    CONSTANTS dialog_with_value_restriction TYPE ddshdiatyp VALUE 'C'.
-    super->/benmsg/if_rest_shlp~get_search_help(
-      EXPORTING
-        iv_objtype       = iv_objtype
-        iv_detail        = iv_detail
-        iv_employee      = iv_employee
-        it_query_params  = it_query_params
-        is_employee_data = is_employee_data
-        it_params        = it_params
-      IMPORTING
-        es_object_descr  = es_object_descr
-        et_shlp_descr    = et_shlp_descr
-        et_shlp_detail   = et_shlp_detail
-        et_helpval_descr = et_helpval_descr
-        et_shlp_int      = et_shlp_int ).
-    TRY.
-        "suppresses immediate search help value request
-        et_shlp_detail[ fieldname = 'ZBEN_MYC_PSP' ]-dialogtype = dialog_with_value_restriction.
-      CATCH cx_sy_itab_line_not_found.
     ENDTRY.
   ENDMETHOD.
 

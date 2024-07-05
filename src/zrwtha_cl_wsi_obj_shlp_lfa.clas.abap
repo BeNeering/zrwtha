@@ -1,6 +1,6 @@
 CLASS zrwtha_cl_wsi_obj_shlp_lfa DEFINITION
   PUBLIC
-  INHERITING FROM /benmsg/cl_wsi_obj_shlp
+  INHERITING FROM zrwtha_cl_wsi_obj_shlp_root
   FINAL
   CREATE PUBLIC .
 
