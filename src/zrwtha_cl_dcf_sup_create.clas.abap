@@ -119,8 +119,6 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
           ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-info.
           ls_message-message = |Email wurde versendet|.
           io_helper->add_form_message( is_message = ls_message ).
-        ELSE.
-
         ENDIF.
       ELSE.
         "Give form message to fill out required data
@@ -137,12 +135,7 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD /benmsg/if_dcf_runtime~init.
-    io_helper->set_value(
-      EXPORTING
-        iv_name  = 'INCO'    " Unique component's tech name
-        iv_value = 'LFE (frei Leistungs- und Erfüllungsort)'    " Value
-    ).
-
+    io_helper->set_value( iv_name  = 'INCO' iv_value = 'LFE (frei Leistungs- und Erfüllungsort)' ).
   ENDMETHOD.
 
   METHOD /benmsg/if_dcf_runtime~submit.
