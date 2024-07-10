@@ -53,6 +53,11 @@ CLASS zrwtha_cl_dcf_sup_create DEFINITION
         value         TYPE any
       RETURNING
         VALUE(result) TYPE string.
+
+    "! removes all user input from the form
+    METHODS clear_form
+      IMPORTING
+        helper TYPE REF TO /benmsg/cl_dcf_change_bdi_h.
 ENDCLASS.
 
 
@@ -127,6 +132,7 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
         ls_message-message = |Bitte füllen Sie alle benötigten Felder aus|.
         io_helper->add_form_message( is_message = ls_message ).
       ENDIF.
+      clear_form( io_helper ).
     ENDIF.
   ENDMETHOD.
 
@@ -223,6 +229,12 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
     DATA(timestamp) = REF timestamp( value ).
     CONVERT TIME STAMP timestamp->* TIME ZONE space INTO DATE DATA(date).
     result = |{ date DATE = USER }|.
+  ENDMETHOD.
+
+
+  METHOD clear_form.
+    DATA empty_form TYPE form_fields.
+    helper->clear_values( VALUE #( FOR c IN components_of( empty_form ) ( CONV string( c ) ) ) ).
   ENDMETHOD.
 
 ENDCLASS.
