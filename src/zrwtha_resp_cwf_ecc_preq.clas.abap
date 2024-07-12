@@ -602,7 +602,7 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
   METHOD profiles_from_agents.
     LOOP AT agents ASSIGNING FIELD-SYMBOL(<agent>).
-      INSERT VALUE #( profile = <agent> proftype = /benmsg/if_wf_c=>obj_cat-cse_us ) INTO TABLE result.
+      INSERT VALUE #( profile = <agent>-objid proftype = /benmsg/if_wf_c=>obj_cat-cse_us ) INTO TABLE result.
     ENDLOOP.
   ENDMETHOD.
 
