@@ -588,12 +588,16 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     ENDLOOP.
     DATA(unique_agents_forecasted_steps) = agents=>unique( agents_forecasted_steps ).
 
-    LOOP AT unique_agents_forecasted_steps ASSIGNING FIELD-SYMBOL(<agent>).
-      DELETE unique_agents_current_step WHERE table_line = <agent>.
-    ENDLOOP.
+    IF unique_agents_current_step IS NOT INITIAL AND unique_agents_forecasted_steps IS NOT INITIAL.
+      LOOP AT unique_agents_forecasted_steps ASSIGNING FIELD-SYMBOL(<agent>).
+        DELETE unique_agents_current_step WHERE table_line = <agent>.
+      ENDLOOP.
 
-    IF unique_agents_current_step IS INITIAL.
-      result = abap_true.
+      IF unique_agents_current_step IS INITIAL.
+        result = abap_true.
+      ELSE.
+        result = abap_false.
+      ENDIF.
     ELSE.
       result = abap_false.
     ENDIF.
