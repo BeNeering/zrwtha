@@ -251,12 +251,24 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
     CLEAR cv_valid.
     LOOP AT rules ASSIGNING FIELD-SYMBOL(<rule>).
-      IF  rule_parameters_of_step-process_id IN <rule>-process_id
-      AND rule_parameters_of_step-value IN <rule>-value
-      AND at_least_one_match( actual_roles = rule_parameters_of_step-roles roles_range = <rule>-roles )
-      AND rule_parameters_of_step-responsibility IN <rule>-responsibility
-      AND rule_parameters_of_step-has_material_group_user IN <rule>-has_material_group_user
-      AND rule_parameters_of_step-all_agents_appear_later_in_wf IN <rule>-agents_appear_later_in_wf.
+      " for debugging the rules
+      DATA does_rule_apply_to TYPE rule_applies_for_debug.
+      does_rule_apply_to-process_id = xsdbool( rule_parameters_of_step-process_id IN <rule>-process_id ).
+      does_rule_apply_to-value = xsdbool( rule_parameters_of_step-value IN <rule>-value ).
+      does_rule_apply_to-roles = xsdbool(
+        at_least_one_match( actual_roles = rule_parameters_of_step-roles roles_range = <rule>-roles ) ).
+      does_rule_apply_to-responsibility = xsdbool( rule_parameters_of_step-responsibility IN <rule>-responsibility ).
+      does_rule_apply_to-has_material_group_user = xsdbool(
+        rule_parameters_of_step-has_material_group_user IN <rule>-has_material_group_user ).
+      does_rule_apply_to-all_agents_appear_later_in_wf = xsdbool(
+        rule_parameters_of_step-all_agents_appear_later_in_wf IN <rule>-agents_appear_later_in_wf ).
+
+      IF  does_rule_apply_to-process_id = abap_true
+      AND does_rule_apply_to-value = abap_true
+      AND does_rule_apply_to-roles = abap_true
+      AND does_rule_apply_to-responsibility = abap_true
+      AND does_rule_apply_to-has_material_group_user = abap_true
+      AND does_rule_apply_to-all_agents_appear_later_in_wf = abap_true.
         cv_valid = <rule>-result.
       ENDIF.
     ENDLOOP.

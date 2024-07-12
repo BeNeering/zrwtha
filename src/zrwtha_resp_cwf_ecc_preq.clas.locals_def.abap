@@ -49,3 +49,15 @@ TYPES: BEGIN OF rule,
          result                    TYPE abap_bool,
        END OF rule.
 TYPES rules TYPE STANDARD TABLE OF rule WITH EMPTY KEY.
+
+
+TYPES:
+  "! for debugging if a rule applies to the current step
+  BEGIN OF rule_applies_for_debug,
+    process_id                    TYPE abap_bool,
+    value                         TYPE abap_bool,
+    roles                         TYPE abap_bool,
+    responsibility                TYPE abap_bool,
+    has_material_group_user       TYPE abap_bool,
+    all_agents_appear_later_in_wf TYPE abap_bool,
+  END OF rule_applies_for_debug.
