@@ -38,7 +38,7 @@ CLASS zrwtha_cl_dcf_sup_create DEFINITION
 
     METHODS components_of
       IMPORTING
-        form_data     TYPE form_fields
+        form_data     TYPE any
       RETURNING
         VALUE(result) TYPE component_names.
 
@@ -58,6 +58,11 @@ CLASS zrwtha_cl_dcf_sup_create DEFINITION
     METHODS clear_form
       IMPORTING
         helper TYPE REF TO /benmsg/cl_dcf_change_bdi_h.
+
+    METHODS toggle_required_fields_err_msg
+      IMPORTING
+        form_data TYPE form_fields
+        helper    TYPE REF TO /benmsg/cl_dcf_change_bdi_h.
 ENDCLASS.
 
 
@@ -124,6 +129,7 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
           ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-info.
           ls_message-message = |Email wurde versendet|.
           io_helper->add_form_message( is_message = ls_message ).
+          clear_form( io_helper ).
         ENDIF.
       ELSE.
         "Give form message to fill out required data
@@ -131,8 +137,8 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
         ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
         ls_message-message = |Bitte füllen Sie alle benötigten Felder aus|.
         io_helper->add_form_message( is_message = ls_message ).
+        toggle_required_fields_err_msg( form_data = form_data helper = io_helper ).
       ENDIF.
-      clear_form( io_helper ).
     ENDIF.
   ENDMETHOD.
 
@@ -159,24 +165,15 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
 
 
   METHOD required_fields_are_supplied.
-    " FIXME: find a way to 'mark' fields as obligatory without having to spell them out more then once.
-    " If new obligatory fields are added, they have to be added in the local type form_fields and here,
-    " which is prone to error
-    IF  form_data-name       IS NOT INITIAL AND
-        form_data-street     IS NOT INITIAL AND
-        form_data-housenum   IS NOT INITIAL AND
-        form_data-postl      IS NOT INITIAL AND
-        form_data-city       IS NOT INITIAL AND
-        form_data-country    IS NOT INITIAL AND
-        form_data-umsatz     IS NOT INITIAL AND
-        form_data-tele       IS NOT INITIAL AND
-        form_data-mail_req   IS NOT INITIAL AND
-        form_data-mail_order IS NOT INITIAL AND
-        form_data-mail_contr IS NOT INITIAL AND
-        form_data-zahlbe     IS NOT INITIAL AND
-        form_data-inco       IS NOT INITIAL.
-      result = abap_true.
-    ENDIF.
+    DATA obligatory_fields TYPE obligatory_form_fields.
+    result = abap_true.
+    LOOP AT components_of( obligatory_fields ) ASSIGNING FIELD-SYMBOL(<component>).
+      ASSIGN COMPONENT <component> OF STRUCTURE form_data TO FIELD-SYMBOL(<value>).
+      IF <value> IS INITIAL.
+        result = abap_false.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
 
@@ -234,7 +231,27 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
 
   METHOD clear_form.
     DATA empty_form TYPE form_fields.
-    helper->clear_values( VALUE #( FOR c IN components_of( empty_form ) ( CONV string( c ) ) ) ).
+    DATA(all_components) = VALUE table_of_strings( FOR c IN components_of( empty_form ) ( CONV string( c ) ) ).
+    helper->clear_values( all_components ).
+    LOOP AT all_components ASSIGNING FIELD-SYMBOL(<component>).
+      helper->clear_message( <component> ).
+    ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD toggle_required_fields_err_msg.
+    DATA obligatory_fields TYPE obligatory_form_fields.
+    LOOP AT components_of( obligatory_fields ) ASSIGNING FIELD-SYMBOL(<component>).
+      ASSIGN COMPONENT <component> OF STRUCTURE form_data TO FIELD-SYMBOL(<value>).
+      IF <value> IS INITIAL.
+        helper->add_message( iv_name = CONV #( <component> ) is_message = VALUE #(
+          type = helper->/benmsg/if_dcf_cons~mc_component-message-type-error
+          tech_name = <component>
+          value = '$OTR:/BENMSG/OTRDCF/REQUIRED' ) ).
+      ELSE.
+        helper->clear_message( CONV #( <component> ) ).
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
 ENDCLASS.
