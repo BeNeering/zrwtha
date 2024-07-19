@@ -110,6 +110,7 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD /benmsg/if_dcf_runtime~init.
+    DATA lv_str TYPE string.
 
     DATA(lo_cart) = io_context->get_my_cart( ).
     IF lo_cart IS BOUND.
@@ -120,12 +121,66 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
     IF lo_cart->get_obj_id( ) IS NOT INITIAL AND lt_prod IS NOT INITIAL.
       TRY.
           DATA(lt_tech_txt) = lt_prod[ 1 ]->get_doc( )->get_tech_txt( ).
-          io_helper->set_value( iv_name  = 'PROJ_NUMBER'  iv_value = lt_tech_txt[ key = 'PROJ_NUMBER' ]-value[ 1 ] ).
-
+          io_helper->set_value( iv_name  = 'PROJ_NUMBER'
+                                iv_value = lt_tech_txt[ key = 'PROJ_NUMBER' ]-value[ 1 ] ).
         CATCH cx_sy_itab_line_not_found.
           " its fine to do nothing here
       ENDTRY.
     ENDIF.
+
+    " fill texts from items
+    TRY.
+        DATA(notes) = lt_prod[ 1 ]->get_notes( ).
+        io_helper->get_value( EXPORTING iv_name  = 'TXT_B97'
+                              IMPORTING ev_value = lv_str ).
+        IF lv_str IS INITIAL.
+          io_helper->set_value( iv_name  = 'TXT_B97'
+                                iv_value = notes[ technical_object_type = 'B97' ]-document_text ).
+        ENDIF.
+
+        io_helper->get_value( EXPORTING iv_name  = 'TXT_B95'
+                              IMPORTING ev_value = lv_str ).
+        IF lv_str IS INITIAL.
+          io_helper->set_value( iv_name  = 'TXT_B95'
+                                iv_value = notes[ technical_object_type = 'B95' ]-document_text ).
+        ENDIF.
+
+        io_helper->get_value( EXPORTING iv_name  = 'TXT_B96'
+                              IMPORTING ev_value = lv_str ).
+        IF lv_str IS INITIAL.
+          io_helper->set_value( iv_name  = 'TXT_B96'
+                                iv_value = notes[ technical_object_type = 'B96' ]-document_text ).
+        ENDIF.
+      CATCH cx_sy_itab_line_not_found.
+        " its fine to do nothing here
+    ENDTRY.
+
+    " if comming from RFX enable "Begründung Auswahl Anbieter" as mandatory
+    LOOP AT lt_prod ASSIGNING FIELD-SYMBOL(<prod>).
+      IF <prod>->get_doc( )->get_item_type( ) = 'RFX'.
+        io_helper->set_attr( iv_name  = 'TXT_B96'
+                             iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_hidden
+                             iv_value = abap_false ).
+        io_helper->set_attr( iv_name  = 'TXT_B96'
+                             iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_required
+                             iv_value = abap_true ).
+      ENDIF.
+
+      DATA(tech_txt) = <prod>->get_doc( )->get_tech_txt( ).
+      TRY.
+          IF tech_txt[ key = 'HSE_ASE' ]-value[ 1 ] = 'true'.
+            io_helper->set_attr( iv_name  = 'TXT_B97'
+                               iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_hidden
+                               iv_value = abap_false ).
+            io_helper->set_attr( iv_name  = 'TXT_B97'
+                                 iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_required
+                                 iv_value = abap_true ).
+          ENDIF.
+        CATCH cx_sy_itab_line_not_found.
+          " its fine to do nothing here
+      ENDTRY.
+
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -151,6 +206,42 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
 
       lo_doc->set_tech_txt( lt_tech_text ).
 
+
+      " map header texts to items
+      " Bedarfsbegründung B95 to all items
+      io_helper->get_value( EXPORTING iv_name  = 'TXT_B95'
+                            IMPORTING ev_value = lv_str ).
+      DATA(notes) = <line>->get_notes( ).
+      " first check if entry exists, then change it, otherwise add it
+      TRY.
+          notes[ technical_object_type = 'B95' ]-document_text = lv_str.
+        CATCH cx_sy_itab_line_not_found.
+          " entry not there, add it
+          INSERT VALUE #( technical_object_type = 'B95' document_text = lv_str ) INTO TABLE notes.
+      ENDTRY.
+
+      IF sy-tabix = '1'. " only to first one
+        " Begründung Auswahl Anbieter B96
+        io_helper->get_value( EXPORTING iv_name  = 'TXT_B96'
+                              IMPORTING ev_value = lv_str ).
+        TRY.
+            notes[ technical_object_type = 'B96' ]-document_text = lv_str.
+          CATCH cx_sy_itab_line_not_found.
+            " entry not there, add it
+            INSERT VALUE #( technical_object_type = 'B96' document_text = lv_str ) INTO TABLE notes.
+        ENDTRY.
+        " Vergabebegründung B97
+        io_helper->get_value( EXPORTING iv_name  = 'TXT_B97'
+                              IMPORTING ev_value = lv_str ).
+        TRY.
+            notes[ technical_object_type = 'B97' ]-document_text = lv_str.
+          CATCH cx_sy_itab_line_not_found.
+            " entry not there, add it
+            INSERT VALUE #( technical_object_type = 'B97' document_text = lv_str ) INTO TABLE notes.
+        ENDTRY.
+      ENDIF.
+
+      <line>->set_notes( it_notes = notes ).
     ENDLOOP.
   ENDMETHOD.
 

@@ -128,6 +128,24 @@ CLASS zrwtha_cl_wsi_obj_ecc_pr IMPLEMENTATION.
         " its fine to do nothing here
     ENDTRY.
 
+    " additional z-fields mapping due missing header in first exit
+    DATA ls_bapi_te_mereqitem  TYPE /benmsg/cl_wsi_obj_ecc_pr=>ts_cust_field_extension.
+    DATA ls_bapi_te_mereqitemx TYPE /benmsg/cl_wsi_obj_ecc_pr=>ts_cust_field_extension.
+    IF is_my_cart-document_type = 'ZNB'. " todo move to constants
+      " TODO CDEV-9700 + CDEV-9673
+    ELSEIF is_my_cart-document_type = 'ZNW' OR is_my_cart-document_type = 'ZFM'. " todo move to constants
+
+      LOOP AT cs_crud_pr_ecc-pr_bapi_ben-extensionin ASSIGNING FIELD-SYMBOL(<ext>) WHERE structure = 'BAPI_TE_MEREQITEM'.
+        APPEND VALUE #( component_name = 'ZZ_DATUM_PA' component_value = sy-datum ) TO <ext>-cust_fields.
+        APPEND VALUE #( component_name = 'ZZ_GVV' component_value = 'DIA' ) TO <ext>-cust_fields.
+      ENDLOOP.
+
+      LOOP AT cs_crud_pr_ecc-pr_bapi_ben-extensionin ASSIGNING FIELD-SYMBOL(<ext_x>) WHERE structure = 'BAPI_TE_MEREQITEMX'.
+        APPEND VALUE #( component_name = 'ZZ_DATUM_PA' component_value = 'X' ) TO <ext_x>-cust_fields.
+        APPEND VALUE #( component_name = 'ZZ_GVV' component_value = 'X' ) TO <ext_x>-cust_fields.
+      ENDLOOP.
+
+    ENDIF.
   ENDMETHOD.
 
 ENDCLASS.
