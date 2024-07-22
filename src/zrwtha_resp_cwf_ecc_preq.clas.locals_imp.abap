@@ -81,3 +81,85 @@ CLASS rule_parameter IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+
+
+CLASS cost_center IMPLEMENTATION.
+
+  METHOD constructor.
+    IF cost_center IS INITIAL.
+      RAISE EXCEPTION TYPE invalid_cost_center.
+    ENDIF.
+    me->cost_center = cost_center.
+  ENDMETHOD.
+
+  METHOD from_purchase_requisition_item.
+    DATA(psp) = VALUE #( item_accounts[ preq_item = item-preq_item ]-wbs_element+5(6) OPTIONAL ).
+    TRY.
+        result = NEW #( CONV #( psp ) ).
+      CATCH invalid_cost_center.
+        result = cost_center=>from_user( username = item-created_by endpoint = endpoint ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD from_user.
+    DATA: BEGIN OF ls_crud_imp,
+            user LIKE sy-uname,
+          END OF ls_crud_imp,
+          BEGIN OF ls_crud_exp,
+            kostl TYPE kostl,
+          END OF ls_crud_exp.
+
+    ls_crud_imp-user = username.
+
+    endpoint->get_external_data( EXPORTING iv_action   = 'KostlFromUser'
+                                           iv_object   = 'BEN_DATA'
+                                           iv_data     = ls_crud_imp
+                                 IMPORTING ev_data     = ls_crud_exp ).
+
+    TRY.
+        result = NEW #( ls_crud_exp-kostl ).
+      CATCH invalid_cost_center INTO DATA(error).
+        RAISE EXCEPTION TYPE missing_user_configuration
+          EXPORTING
+            previous = error.
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD internal_value.
+    result = |{ cost_center ALPHA = IN }|.
+  ENDMETHOD.
+
+  METHOD external_value.
+    result = |{ cost_center ALPHA = OUT }|.
+  ENDMETHOD.
+
+ENDCLASS.
+
+
+CLASS fake_endpoint DEFINITION CREATE PUBLIC INHERITING FROM /benmsg/cl_wsi_obj_cust_data.
+
+  PUBLIC SECTION.
+    METHODS constructor.
+    METHODS get_external_data REDEFINITION.
+    DATA cost_center TYPE kostl.
+
+ENDCLASS.
+
+CLASS fake_endpoint IMPLEMENTATION.
+
+  METHOD constructor.
+    super->constructor(
+      iv_customer_id = 'TEST'
+      iv_cust_sys_id = 'TEST'
+      iv_remote_sys  = 'TEST' ).
+  ENDMETHOD.
+
+  METHOD get_external_data.
+    DATA: BEGIN OF result,
+            kostl TYPE kostl,
+          END OF result.
+    result-kostl = me->cost_center.
+    ev_data = result.
+  ENDMETHOD.
+
+ENDCLASS.

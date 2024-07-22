@@ -61,3 +61,53 @@ TYPES:
     has_material_group_user       TYPE abap_bool,
     all_agents_appear_later_in_wf TYPE abap_bool,
   END OF rule_applies_for_debug.
+
+
+CLASS invalid_cost_center DEFINITION CREATE PUBLIC INHERITING FROM cx_static_check.
+ENDCLASS.
+
+
+CLASS missing_user_configuration DEFINITION CREATE PUBLIC INHERITING FROM cx_static_check.
+ENDCLASS.
+
+
+CLASS cost_center DEFINITION CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    METHODS constructor
+      IMPORTING
+        cost_center TYPE kostl
+      RAISING
+        invalid_cost_center.
+
+    CLASS-METHODS from_purchase_requisition_item
+      IMPORTING
+        item          TYPE /benmsg/bapimereqitem_s
+        item_accounts TYPE /benmsg/bapimereqaccount_t
+        endpoint      TYPE REF TO /benmsg/cl_wsi_obj_cust_data
+      RETURNING
+        VALUE(result) TYPE REF TO cost_center
+      RAISING
+        invalid_cost_center
+        missing_user_configuration.
+
+    CLASS-METHODS from_user
+      IMPORTING
+        username      TYPE syst_uname
+        endpoint      TYPE REF TO /benmsg/cl_wsi_obj_cust_data
+      RETURNING
+        VALUE(result) TYPE REF TO cost_center
+      RAISING
+        missing_user_configuration.
+
+    METHODS internal_value
+      RETURNING
+        VALUE(result) TYPE kostl.
+
+    METHODS external_value
+      RETURNING
+        VALUE(result) TYPE kostl.
+
+  PRIVATE SECTION.
+    DATA cost_center TYPE kostl.
+ENDCLASS.

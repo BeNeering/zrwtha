@@ -38,16 +38,13 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
     METHODS get_roles_from_user IMPORTING iv_kostl   TYPE kostl
                                           iv_uname   LIKE sy-uname
                                 RETURNING VALUE(ret) TYPE spers_alst.
-    METHODS get_user_from_kostl_matkl IMPORTING iv_kostl   TYPE kostl
+    METHODS get_user_from_kostl_matkl IMPORTING iv_kostl   TYPE REF TO cost_center
                                                 iv_matkl   TYPE matkl
                                       RETURNING VALUE(ret) TYPE xubname.
-    METHODS get_kostl_from_user IMPORTING iv_uname   LIKE sy-uname
-                                RETURNING VALUE(ret) TYPE kostl.
+
 
   PRIVATE SECTION.
     CLASS-DATA cached_users_from_role TYPE tyt_cached_users_from_role.
-
-
 
     METHODS agents_for_step
       IMPORTING
@@ -101,12 +98,14 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
         roles_range   TYPE rule-roles
       RETURNING
         VALUE(result) TYPE abap_bool.
+
     METHODS agents_appear_later_in_wf
       IMPORTING
         step          TYPE /benmsg/swf_bd_step
         wf_obj        TYPE REF TO /benmsg/cl_wf_obj
       RETURNING
         VALUE(result) TYPE abap_bool.
+
     METHODS profiles_from_agents
       IMPORTING
         agents        TYPE tswhactor
@@ -283,6 +282,7 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
           ls_preq    TYPE /benmsg/bapipr_s,
           lr_item    TYPE REF TO /benmsg/bapimereqitem_s.
 
+    DATA cost_center TYPE REF TO cost_center.
     DATA ls_mycart_struct TYPE /benmsg/cl_dc4_models=>ts_my_cart.
 
     " zcon_wf_resp_cwf_ecc_preq
@@ -294,25 +294,18 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
                                          et_mycart = ls_mycart_struct ).
 
     DATA(lv_ext_id) = |{ is_step-responsibility }|.
-
+    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
+                                                  iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
+                                                  iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
     LOOP AT ls_preq-pritemexp REFERENCE INTO lr_item WHERE delete_ind EQ space.
-
       TRY.
-          DATA(lv_psp) = ls_preq-praccount[ preq_item = lr_item->preq_item ]-wbs_element.
-          DATA(lv_kostl) = lv_psp+5(6). " sample: 141155134100000 -> 14 1 15 >513410< 0000
-
-          " will only trigger if no psp was found, moved to catch
-*          " could be that KOSTL is empty, since this PR was created without accounting, then we take KOSTL from user
-*          IF lv_kostl IS INITIAL.
-*            lv_kostl = get_kostl_from_user( iv_uname = lr_item->created_by ).
-*          ENDIF.
-
-          CHECK lv_kostl IS NOT INITIAL.
-
-        CATCH cx_sy_itab_line_not_found.
-          " could be that KOSTL is empty, since this PR was created without accounting, then we take KOSTL from user
-          lv_kostl = get_kostl_from_user( iv_uname = lr_item->created_by ).
-          CHECK lv_kostl IS NOT INITIAL.
+          cost_center = cost_center=>from_purchase_requisition_item(
+            item = lr_item->*
+            item_accounts = ls_preq-praccount
+            endpoint = lo_ws ).
+        CATCH invalid_cost_center
+              missing_user_configuration.
+          CONTINUE.
       ENDTRY.
 
       IF is_step-responsibility = 'ZRWTHA_PG_TECHNISCH' OR
@@ -320,10 +313,10 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
          is_step-responsibility = 'ZRWTHA_ALL' OR
          is_step-responsibility = 'ZRWTHA_SACHLICH'.
 
-        lv_ext_id = |{ is_step-responsibility }_{ lv_kostl }|.
+        lv_ext_id = |{ is_step-responsibility }_{ cost_center->external_value( ) }|.
       ELSEIF is_step-responsibility = 'ZRWTHA_WARENGRP'.
         " group positions by kostl,matkl
-        DATA(lv_preq_name) = get_user_from_kostl_matkl( iv_kostl = CONV #( lv_kostl )
+        DATA(lv_preq_name) = get_user_from_kostl_matkl( iv_kostl = cost_center
                                                         iv_matkl = lr_item->matl_group ).
         CHECK lv_preq_name IS NOT INITIAL.
 
@@ -425,29 +418,6 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
   ENDMETHOD.
 
 
-  METHOD get_kostl_from_user.
-    DATA: BEGIN OF ls_crud_imp,
-            user LIKE sy-uname,
-          END OF ls_crud_imp,
-          BEGIN OF ls_crud_exp,
-            kostl TYPE kostl,
-          END OF ls_crud_exp.
-
-    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
-                                                    iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
-                                                    iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
-
-    ls_crud_imp-user = iv_uname.
-
-    lo_ws->get_external_data( EXPORTING iv_action   = 'KostlFromUser'
-                                        iv_object   = 'BEN_DATA'
-                                        iv_data     = ls_crud_imp
-                              IMPORTING ev_data     = ls_crud_exp ).
-
-    ret = ls_crud_exp-kostl.
-  ENDMETHOD.
-
-
   METHOD get_roles_from_user.
     DATA: BEGIN OF ls_crud_imp,
             kostl TYPE kostl,
@@ -520,7 +490,7 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
                                                     iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
                                                     iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
 
-    ls_crud_imp-kostl = iv_kostl.
+    ls_crud_imp-kostl = iv_kostl->internal_value( ).
     ls_crud_imp-matkl = iv_matkl.
 
     lo_ws->get_external_data( EXPORTING iv_action   = 'FreigFromKostlMatkl'
@@ -547,27 +517,31 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
 
   METHOD roles_of_requester.
-    DATA(requester) = purchase_requsition-pritemexp[ 1 ]-preq_name.
-    DATA(cost_center) = COND kostl( LET psp = purchase_requsition-praccount[ 1 ]-wbs_element+5(6) IN
-                                    WHEN psp IS NOT INITIAL
-                                    THEN psp
-                                    ELSE get_kostl_from_user( iv_uname = requester ) ).
-    result = get_roles_from_user( iv_kostl = cost_center iv_uname = requester ).
+*    DATA(requester) = purchase_requsition-pritemexp[ 1 ]-preq_name.
+*    DATA(cost_center) = COND kostl( LET psp = purchase_requsition-praccount[ 1 ]-wbs_element+5(6) IN
+*                                    WHEN psp IS NOT INITIAL
+*                                    THEN psp
+*                                    ELSE get_kostl_from_user( iv_uname = requester ) ).
+*    result = get_roles_from_user( iv_kostl = cost_center iv_uname = requester ).
   ENDMETHOD.
 
 
   METHOD has_material_group_user.
+    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
+                                                    iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
+                                                    iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
     LOOP AT purchase_requisition-pritemexp ASSIGNING FIELD-SYMBOL(<item>) WHERE delete_ind = abap_false.
       TRY.
-          DATA(cost_center) = COND kostl(
-            LET psp = purchase_requisition-praccount[ preq_item = <item>-preq_item ]-wbs_element IN
-            WHEN psp+5(6) IS NOT INITIAL
-            THEN psp+5(6)
-            ELSE get_kostl_from_user( iv_uname = <item>-created_by ) ).
-          CHECK cost_center IS NOT INITIAL.
-          result = xsdbool( get_user_from_kostl_matkl( iv_kostl = cost_center
-                                                       iv_matkl = <item>-matl_group ) IS NOT INITIAL ).
-        CATCH cx_sy_itab_line_not_found.
+          result = xsdbool(
+            get_user_from_kostl_matkl(
+              iv_kostl = cost_center=>from_purchase_requisition_item(
+                item = <item>
+                item_accounts = purchase_requisition-praccount
+                endpoint = lo_ws )
+              iv_matkl = <item>-matl_group ) IS NOT INITIAL ).
+        CATCH invalid_cost_center
+              missing_user_configuration.
+          CONTINUE.
       ENDTRY.
     ENDLOOP.
   ENDMETHOD.
