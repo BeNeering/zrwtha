@@ -64,6 +64,7 @@ CLASS cost_center_tests IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals( exp = `9999999999` act = cost_center->internal_value( ) ).
   ENDMETHOD.
 
+
   METHOD setup.
     fake_endpoint = NEW #( ).
   ENDMETHOD.

@@ -4,47 +4,25 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
   CREATE PUBLIC .
 
   PUBLIC SECTION.
-
-    INTERFACES /benmsg/if_wf_bd_resp .
-    INTERFACES if_badi_interface .
-
-    TYPES:
-      BEGIN OF ts_wf_item,
-        wf_type TYPE char2,
-        uname   TYPE uname,
-        gswrt   TYPE p LENGTH 13 DECIMALS 2,
-        bukrs   TYPE char4,
-      END OF ts_wf_item .
-    TYPES:
-      BEGIN OF ts_wf_data,
-        step       TYPE string,
-        items      TYPE STANDARD TABLE OF ts_wf_item WITH EMPTY KEY,
-        step_valid TYPE abap_bool,
-      END OF ts_wf_data .
-    TYPES:
-      BEGIN OF role,
-        role TYPE  agr_name,
-      END OF role .
-    TYPES:
-      tt_roles TYPE TABLE OF role WITH DEFAULT KEY .
-    TYPES:
-      tt_users TYPE TABLE OF xubname WITH DEFAULT KEY .
+    INTERFACES /benmsg/if_wf_bd_resp.
+    INTERFACES if_badi_interface.
+    TYPES tt_users TYPE TABLE OF xubname WITH DEFAULT KEY .
   PROTECTED SECTION.
     DATA mo_pr TYPE REF TO /benmsg/cl_wf_obj_cwf_ec_preq .
 
     METHODS get_users_from_role IMPORTING iv_kostl   TYPE kostl
                                           iv_role    TYPE agr_name
                                 RETURNING VALUE(ret) TYPE tt_users.
-    METHODS get_roles_from_user IMPORTING iv_kostl   TYPE kostl
+    METHODS get_roles_from_user IMPORTING iv_kostl   TYPE REF TO cost_center
                                           iv_uname   LIKE sy-uname
                                 RETURNING VALUE(ret) TYPE spers_alst.
     METHODS get_user_from_kostl_matkl IMPORTING iv_kostl   TYPE REF TO cost_center
                                                 iv_matkl   TYPE matkl
                                       RETURNING VALUE(ret) TYPE xubname.
 
-
   PRIVATE SECTION.
     CLASS-DATA cached_users_from_role TYPE tyt_cached_users_from_role.
+    DATA customer_system TYPE REF TO /benmsg/cl_wsi_obj_cust_data.
 
     METHODS agents_for_step
       IMPORTING
@@ -111,6 +89,10 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
         agents        TYPE tswhactor
       RETURNING
         VALUE(result) TYPE sorted_profiles.
+
+    METHODS cached_customer_system
+      RETURNING
+        VALUE(result) TYPE REF TO /benmsg/cl_wsi_obj_cust_data.
 
 ENDCLASS.
 
@@ -283,26 +265,22 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
           lr_item    TYPE REF TO /benmsg/bapimereqitem_s.
 
     DATA cost_center TYPE REF TO cost_center.
-    DATA ls_mycart_struct TYPE /benmsg/cl_dc4_models=>ts_my_cart.
 
     " zcon_wf_resp_cwf_ecc_preq
     ls_itm_map-otype = 'BUS2009'. " Purchase Requisition Item
+
     me->mo_pr = CAST /benmsg/cl_wf_obj_cwf_ec_preq( io_wf_obj ).
     me->mo_pr->ecc_get_detail( EXPORTING iv_cwf_filter = 'X'
                                IMPORTING et_item = ls_preq-pritemexp
-                                         et_account = ls_preq-praccount
-                                         et_mycart = ls_mycart_struct ).
+                                         et_account = ls_preq-praccount ).
 
     DATA(lv_ext_id) = |{ is_step-responsibility }|.
-    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
-                                                  iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
-                                                  iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
     LOOP AT ls_preq-pritemexp REFERENCE INTO lr_item WHERE delete_ind EQ space.
       TRY.
           cost_center = cost_center=>from_purchase_requisition_item(
             item = lr_item->*
             item_accounts = ls_preq-praccount
-            endpoint = lo_ws ).
+            endpoint = cached_customer_system( ) ).
         CATCH invalid_cost_center
               missing_user_configuration.
           CONTINUE.
@@ -343,9 +321,9 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     DATA lt_preq_names TYPE zrwtha_resp_cwf_ecc_preq=>tt_users.
 
     mo_pr = CAST /benmsg/cl_wf_obj_cwf_ec_preq( wf_obj ).
-    mo_pr->ecc_get_detail( EXPORTING iv_cwf_filter = 'X'
-                           IMPORTING et_item = ls_preq-pritemexp
-                                     et_account = ls_preq-praccount ).
+    me->mo_pr->ecc_get_detail( EXPORTING iv_cwf_filter = 'X'
+                               IMPORTING et_item = ls_preq-pritemexp
+                                         et_account = ls_preq-praccount ).
 
     IF decision-responsibility = 'ZRWTHA_PG_TECHNISCH' OR
        decision-responsibility = 'ZRWTHA_KAUFM' OR
@@ -390,8 +368,8 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     LOOP AT lt_preq_names ASSIGNING FIELD-SYMBOL(<agent>).
       INSERT VALUE #( otype = /benmsg/if_wf_c=>obj_cat-user objid = <agent> ) INTO TABLE unique_agents.
     ENDLOOP.
-    result-agents = unique_agents.
 
+    result-agents = unique_agents.
     result-profiles = profiles_from_agents( result-agents ).
   ENDMETHOD.
 
@@ -427,17 +405,13 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
             roles TYPE spers_alst,
           END OF ls_crud_exp.
 
-    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
-                                                    iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
-                                                    iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
-
-    ls_crud_imp-kostl = iv_kostl.
+    ls_crud_imp-kostl = iv_kostl->internal_value( ).
     ls_crud_imp-user = iv_uname.
 
-    lo_ws->get_external_data( EXPORTING iv_action   = 'RolesFromUser'
-                                        iv_object   = 'BEN_DATA'
-                                        iv_data     = ls_crud_imp
-                              IMPORTING ev_data     = ls_crud_exp ).
+    cached_customer_system( )->get_external_data( EXPORTING iv_action   = 'RolesFromUser'
+                                                            iv_object   = 'BEN_DATA'
+                                                            iv_data     = ls_crud_imp
+                                                  IMPORTING ev_data     = ls_crud_exp ).
 
     ret = ls_crud_exp-roles.
   ENDMETHOD.
@@ -452,9 +426,6 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
             users TYPE tt_users,
           END OF ls_crud_exp.
 
-    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
-                                                    iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
-                                                    iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
     ls_crud_imp-role = iv_role.
     IF iv_role = 'ZRWTHA_PG_TECHNISCH'.
       ls_crud_imp-role = 'Z_GHBS:04_GENEHMIGUNG-FACHL'.
@@ -468,10 +439,10 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
     ls_crud_imp-kostl = iv_kostl.
 
-    lo_ws->get_external_data( EXPORTING iv_action   = 'UsersFromRoles'
-                                        iv_object   = 'BEN_DATA'
-                                        iv_data     = ls_crud_imp
-                              IMPORTING ev_data     = ls_crud_exp ).
+    cached_customer_system( )->get_external_data( EXPORTING iv_action   = 'UsersFromRoles'
+                                                            iv_object   = 'BEN_DATA'
+                                                            iv_data     = ls_crud_imp
+                                                  IMPORTING ev_data     = ls_crud_exp ).
 
     ret = ls_crud_exp-users.
   ENDMETHOD.
@@ -486,17 +457,13 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
             freig TYPE xubname,
           END OF ls_crud_exp.
 
-    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
-                                                    iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
-                                                    iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
-
     ls_crud_imp-kostl = iv_kostl->internal_value( ).
     ls_crud_imp-matkl = iv_matkl.
 
-    lo_ws->get_external_data( EXPORTING iv_action   = 'FreigFromKostlMatkl'
-                                        iv_object   = 'BEN_DATA'
-                                        iv_data     = ls_crud_imp
-                              IMPORTING ev_data     = ls_crud_exp ).
+    cached_customer_system( )->get_external_data( EXPORTING iv_action   = 'FreigFromKostlMatkl'
+                                                            iv_object   = 'BEN_DATA'
+                                                            iv_data     = ls_crud_imp
+                                                  IMPORTING ev_data     = ls_crud_exp ).
 
     ret = ls_crud_exp-freig.
   ENDMETHOD.
@@ -517,19 +484,23 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
 
   METHOD roles_of_requester.
-*    DATA(requester) = purchase_requsition-pritemexp[ 1 ]-preq_name.
-*    DATA(cost_center) = COND kostl( LET psp = purchase_requsition-praccount[ 1 ]-wbs_element+5(6) IN
-*                                    WHEN psp IS NOT INITIAL
-*                                    THEN psp
-*                                    ELSE get_kostl_from_user( iv_uname = requester ) ).
-*    result = get_roles_from_user( iv_kostl = cost_center iv_uname = requester ).
+    TRY.
+        DATA(requester) = purchase_requsition-pritemexp[ 1 ]-preq_name.
+        DATA(cost_center) = NEW cost_center( CONV #( purchase_requsition-praccount[ 1 ]-wbs_element+5(6) ) ).
+      CATCH cx_sy_itab_line_not_found.
+        RETURN.
+      CATCH invalid_cost_center.
+        TRY.
+            cost_center = cost_center=>from_user( username = requester endpoint = cached_customer_system( ) ).
+          CATCH missing_user_configuration.
+            RETURN.
+        ENDTRY.
+    ENDTRY.
+    result = get_roles_from_user( iv_kostl = cost_center iv_uname = requester ).
   ENDMETHOD.
 
 
   METHOD has_material_group_user.
-    DATA(lo_ws) = NEW /benmsg/cl_wsi_obj_cust_data( iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
-                                                    iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
-                                                    iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
     LOOP AT purchase_requisition-pritemexp ASSIGNING FIELD-SYMBOL(<item>) WHERE delete_ind = abap_false.
       TRY.
           result = xsdbool(
@@ -537,7 +508,7 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
               iv_kostl = cost_center=>from_purchase_requisition_item(
                 item = <item>
                 item_accounts = purchase_requisition-praccount
-                endpoint = lo_ws )
+                endpoint = cached_customer_system( ) )
               iv_matkl = <item>-matl_group ) IS NOT INITIAL ).
         CATCH invalid_cost_center
               missing_user_configuration.
@@ -594,6 +565,17 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     LOOP AT agents ASSIGNING FIELD-SYMBOL(<agent>).
       INSERT VALUE #( profile = <agent>-objid proftype = /benmsg/if_wf_c=>obj_cat-cse_us ) INTO TABLE result.
     ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD cached_customer_system.
+    IF me->customer_system IS INITIAL.
+      me->customer_system = NEW /benmsg/cl_wsi_obj_cust_data(
+        iv_customer_id = me->mo_pr->ms_cwf_hdr-customer_id
+        iv_cust_sys_id = me->mo_pr->ms_cwf_hdr-cust_sys_id
+        iv_remote_sys  = me->mo_pr->ms_cwf_hdr-remote_sys ).
+    ENDIF.
+    result = me->customer_system.
   ENDMETHOD.
 
 ENDCLASS.
