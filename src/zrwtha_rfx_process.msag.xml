@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<abapGit version="v1.0.0" serializer="LCL_OBJECT_MSAG" serializer_version="v1.0.0">
+ <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+   <T100A>
+    <ARBGB>ZRWTHA_RFX_PROCESS</ARBGB>
+    <MASTERLANG>E</MASTERLANG>
+    <STEXT>RFX related messages</STEXT>
+   </T100A>
+   <T100>
+    <T100>
+     <SPRSL>E</SPRSL>
+     <ARBGB>ZRWTHA_RFX_PROCESS</ARBGB>
+     <MSGNR>000</MSGNR>
+     <TEXT>Mindestens 3 Lieferanten muessen angefragt werden.</TEXT>
+    </T100>
+    <T100>
+     <SPRSL>E</SPRSL>
+     <ARBGB>ZRWTHA_RFX_PROCESS</ARBGB>
+     <MSGNR>001</MSGNR>
+     <TEXT>Total quotation value exceeds allowed maximum value set by requestor</TEXT>
+    </T100>
+   </T100>
+  </asx:values>
+ </asx:abap>
+</abapGit>
