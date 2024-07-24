@@ -146,6 +146,11 @@ CLASS zrwtha_cl_wsi_obj_ecc_pr IMPLEMENTATION.
       ENDLOOP.
 
     ENDIF.
+
+    " turns all attachments into header attachments
+    LOOP AT cs_crud_pr_ecc-attachments ASSIGNING FIELD-SYMBOL(<attachment>).
+      CLEAR <attachment>-preq_item.
+    ENDLOOP.
   ENDMETHOD.
 
 ENDCLASS.
