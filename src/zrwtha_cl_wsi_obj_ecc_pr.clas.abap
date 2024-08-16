@@ -11,6 +11,7 @@ CLASS zrwtha_cl_wsi_obj_ecc_pr DEFINITION
     METHODS map_extensionout REDEFINITION . " z-fields from RWTHA
     METHODS map_my_cart_to_preq_pre_exit REDEFINITION.
     METHODS map_mycart_to_preq_post_exit2 REDEFINITION.
+    METHODS map_preq_to_my_cart_post_exit2 REDEFINITION.
   PRIVATE SECTION.
 ENDCLASS.
 
@@ -93,24 +94,26 @@ CLASS zrwtha_cl_wsi_obj_ecc_pr IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD map_mycart_to_preq_post_exit2.
-
     " if PSP element is changed, we need to reset couple of fields to be able to retrigger the automatic determination in sap again
     LOOP AT cs_crud_pr_ecc-pr_bapi-praccountx ASSIGNING FIELD-SYMBOL(<line>).
-      IF <line>-wbs_element = 'X'. " we have a change here
-        TRY.
-            CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-costcenter.
-            CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-profit_ctr.
-            CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-funds_ctr.
-            CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-bus_area.
-
-            <line>-costcenter = 'X'.
-            <line>-profit_ctr = 'X'.
-            <line>-funds_ctr = 'X'.
-            <line>-bus_area = 'X'.
-          CATCH cx_sy_itab_line_not_found.
-            " its fine to do nothing here
-        ENDTRY.
+      DATA(lv_first_pos) = <line>-preq_item. " needed for later in the code
+      IF <line>-wbs_element <> 'X'. " we have a change here
+        CONTINUE.
       ENDIF.
+
+      TRY.
+          CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-costcenter.
+          CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-profit_ctr.
+          CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-funds_ctr.
+          CLEAR cs_crud_pr_ecc-pr_bapi-praccount[ preq_item = <line>-preq_item ]-bus_area.
+
+          <line>-costcenter = 'X'.
+          <line>-profit_ctr = 'X'.
+          <line>-funds_ctr  = 'X'.
+          <line>-bus_area   = 'X'.
+        CATCH cx_sy_itab_line_not_found.
+          " its fine to do nothing here
+      ENDTRY.
     ENDLOOP.
 
     " the following change will not be needed after CDEV-9596 is in place
@@ -118,10 +121,14 @@ CLASS zrwtha_cl_wsi_obj_ecc_pr IMPLEMENTATION.
     TRY.
         IF cs_crud_pr_ecc-pr_bapi-pritem[ 1 ]-delete_ind = 'X'.
           LOOP AT cs_crud_pr_ecc-pr_bapi-pritemx ASSIGNING FIELD-SYMBOL(<linex>).
-            CLEAR: <linex>-unit, <linex>-preq_unit_iso, <linex>-gr_ind, <linex>-plnd_delry.
+            CLEAR: <linex>-unit,
+                   <linex>-preq_unit_iso,
+                   <linex>-gr_ind,
+                   <linex>-plnd_delry.
           ENDLOOP.
           LOOP AT cs_crud_pr_ecc-pr_bapi-praccountx ASSIGNING FIELD-SYMBOL(<lineaccx>).
-            CLEAR: <lineaccx>-quantity, <lineaccx>-profit_ctr.
+            CLEAR: <lineaccx>-quantity,
+                   <lineaccx>-profit_ctr.
           ENDLOOP.
         ENDIF.
       CATCH cx_sy_itab_line_not_found.
@@ -129,28 +136,64 @@ CLASS zrwtha_cl_wsi_obj_ecc_pr IMPLEMENTATION.
     ENDTRY.
 
     " additional z-fields mapping due missing header in first exit
-    DATA ls_bapi_te_mereqitem  TYPE /benmsg/cl_wsi_obj_ecc_pr=>ts_cust_field_extension.
-    DATA ls_bapi_te_mereqitemx TYPE /benmsg/cl_wsi_obj_ecc_pr=>ts_cust_field_extension.
-    IF is_my_cart-document_type = 'ZNB'. " todo move to constants
-      " TODO CDEV-9700 + CDEV-9673
-    ELSEIF is_my_cart-document_type = 'ZNW' OR is_my_cart-document_type = 'ZFM'. " todo move to constants
+    IF is_my_cart-document_type = 'ZNW' OR is_my_cart-document_type = 'ZFM' OR is_my_cart-document_type = 'ZNB'.
 
       LOOP AT cs_crud_pr_ecc-pr_bapi_ben-extensionin ASSIGNING FIELD-SYMBOL(<ext>) WHERE structure = 'BAPI_TE_MEREQITEM'.
-        APPEND VALUE #( component_name = 'ZZ_DATUM_PA' component_value = sy-datum ) TO <ext>-cust_fields.
-        APPEND VALUE #( component_name = 'ZZ_GVV' component_value = 'DIA' ) TO <ext>-cust_fields.
+        APPEND VALUE #( component_name  = 'ZZ_DATUM_PA'
+                        component_value = sy-datum ) TO <ext>-cust_fields.
+        APPEND VALUE #( component_name  = 'ZZ_GVV'
+                        component_value = 'DIA' ) TO <ext>-cust_fields.
       ENDLOOP.
 
       LOOP AT cs_crud_pr_ecc-pr_bapi_ben-extensionin ASSIGNING FIELD-SYMBOL(<ext_x>) WHERE structure = 'BAPI_TE_MEREQITEMX'.
-        APPEND VALUE #( component_name = 'ZZ_DATUM_PA' component_value = 'X' ) TO <ext_x>-cust_fields.
-        APPEND VALUE #( component_name = 'ZZ_GVV' component_value = 'X' ) TO <ext_x>-cust_fields.
+        APPEND VALUE #( component_name  = 'ZZ_DATUM_PA'
+                        component_value = 'X' ) TO <ext_x>-cust_fields.
+        APPEND VALUE #( component_name  = 'ZZ_GVV'
+                        component_value = 'X' ) TO <ext_x>-cust_fields.
       ENDLOOP.
 
+      IF is_my_cart-document_type = 'ZNB'.
+        LOOP AT cs_crud_pr_ecc-pr_bapi-pritem ASSIGNING FIELD-SYMBOL(<item_line>).
+          APPEND VALUE #( preq_item = <item_line>-preq_item
+                          completed = abap_true
+                          reason    = '0000' ) TO cs_crud_pr_ecc-pr_bapi-prversion.
+          APPEND VALUE #( preq_item = <item_line>-preq_item
+                          completed = abap_true
+                          reason    = abap_true ) TO cs_crud_pr_ecc-pr_bapi-prversionx.
+        ENDLOOP.
+      ENDIF.
+
     ENDIF.
+
+    " map header texts to items
+    LOOP AT cs_crud_pr_ecc-pr_bapi-prheadertext ASSIGNING FIELD-SYMBOL(<txt_header>) WHERE text_id = 'B96' OR text_id = 'B97'.
+      <txt_header>-preq_item = lv_first_pos.
+      APPEND <txt_header> TO cs_crud_pr_ecc-pr_bapi-pritemtext.
+    ENDLOOP.
+    " for 95 add to all lines not only first
+    LOOP AT cs_crud_pr_ecc-pr_bapi-prheadertext ASSIGNING <txt_header> WHERE text_id = 'B95'.
+      LOOP AT cs_crud_pr_ecc-pr_bapi-pritem ASSIGNING FIELD-SYMBOL(<pr_item>).
+        <txt_header>-preq_item = <pr_item>-preq_item.
+        APPEND <txt_header> TO cs_crud_pr_ecc-pr_bapi-pritemtext.
+      ENDLOOP.
+    ENDLOOP.
+    DELETE cs_crud_pr_ecc-pr_bapi-prheadertext WHERE text_id = 'B95' OR text_id = 'B96' OR text_id = 'B97'.
 
     " turns all attachments into header attachments
     LOOP AT cs_crud_pr_ecc-attachments ASSIGNING FIELD-SYMBOL(<attachment>).
       CLEAR <attachment>-preq_item.
     ENDLOOP.
+  ENDMETHOD.
+
+  METHOD map_preq_to_my_cart_post_exit2.
+    " map item text back to header
+    TRY.
+        LOOP AT cs_my_cart-products[ 1 ]-notes ASSIGNING FIELD-SYMBOL(<line>) WHERE technical_object_type = 'B95' OR technical_object_type = 'B96' OR technical_object_type = 'B97'.
+          APPEND VALUE #( document_text = <line>-document_text technical_object_type = <line>-technical_object_type ) TO cs_my_cart-notes.
+        ENDLOOP.
+      CATCH cx_sy_itab_line_not_found.
+        " its fine to do nothing here
+    ENDTRY.
   ENDMETHOD.
 
 ENDCLASS.

@@ -246,6 +246,39 @@ CLASS zrwtha_cl_dcf_pr_freetext IMPLEMENTATION.
         ENDIF.
 
     ENDCASE.
+
+    " mapping of attachments to have one field in the end which then does the target mapping
+    " todo delete
+*    io_helper->set_attr( iv_name  = 'HIDDEN_AGGREGATE'
+*                               iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_hidden
+*                               iv_value = abap_false ).
+    IF iv_trigger = 'ATTACHMENTS_FU' OR iv_trigger = 'ATTACHMENTS_FU2'.
+      DATA: lt_fileupload      TYPE io_helper->tt_attachments,
+            lt_fileupload_aggr TYPE io_helper->tt_attachments.
+      io_helper->clear_value( iv_name  = 'ATTACHMENTS_FU_AGGR' ). " delete old values and add again
+
+      io_helper->get_value(
+        EXPORTING
+          iv_name  = 'ATTACHMENTS_FU'
+        IMPORTING
+          ev_value = lt_fileupload
+      ).
+      APPEND LINES OF lt_fileupload TO lt_fileupload_aggr.
+      io_helper->get_value(
+        EXPORTING
+          iv_name  = 'ATTACHMENTS_FU2'
+        IMPORTING
+          ev_value = lt_fileupload
+      ).
+      APPEND LINES OF lt_fileupload TO lt_fileupload_aggr.
+
+      io_helper->set_value(
+        EXPORTING
+          iv_name  = 'ATTACHMENTS_FU_AGGR'    " Unique component's tech name
+          iv_value = lt_fileupload_aggr    " Value
+      ).
+
+    ENDIF.
   ENDMETHOD.
 
 
@@ -324,5 +357,6 @@ CLASS zrwtha_cl_dcf_pr_freetext IMPLEMENTATION.
           " its fine to do nothing here
       ENDTRY.
     ENDIF.
+
   ENDMETHOD.
 ENDCLASS.
