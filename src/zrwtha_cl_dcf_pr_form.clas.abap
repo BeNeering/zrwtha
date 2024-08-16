@@ -9,6 +9,11 @@ CLASS zrwtha_cl_dcf_pr_form DEFINITION
     INTERFACES if_badi_interface .
   PROTECTED SECTION.
   PRIVATE SECTION.
+    METHODS cost_center
+      IMPORTING
+        accounting    TYPE REF TO /benmsg/cl_dc4_models=>ts_acc_assgmt_cats
+      RETURNING
+        VALUE(result) TYPE kostl.
 ENDCLASS.
 
 
@@ -38,13 +43,18 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
       ENDTRY.
 
       DATA(lv_current_product_type) = <prod>->get_doc( )->get_doc_field( iv_name = 'PROCESS_ID' ).
+      <prod>->get_accounting( IMPORTING es_accdata = DATA(accounting) ).
       IF index = 1.
+        DATA(first_cost_center) = cost_center( accounting = REF #( accounting ) ).
         DATA(first_product_type) = lv_current_product_type.
         DATA(material_group) = <prod>->get_material_group( )-id.
         DATA(purchasing_grp) = <prod>->get_purchasing_grp( )-id.
       ENDIF.
       IF lv_current_product_type <> first_product_type.
         DATA(product_types_differ) = abap_true.
+      ENDIF.
+      IF first_cost_center <> cost_center( REF #( accounting ) ).
+        DATA(cost_centers_differ) = abap_true.
       ENDIF.
       IF lv_current_product_type = 'NOT'.
         lv_not = abap_true.
@@ -56,7 +66,7 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
 
     " TODO add to customizing table later
     IF ( lv_pr_value > 1000 AND lv_not = abap_true ) OR ( lv_pr_value > 3000 AND lv_cat = abap_true ).
-      ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
+      ls_message-type    = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
       ls_message-message = |Beschaffung nicht erlaubt, bitte Anforderung aufteilen.|.
       io_helper->add_form_message( is_message = ls_message ).
     ENDIF.
@@ -68,13 +78,18 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
       io_helper->add_form_message( is_message = ls_message ).
     ENDIF.
 
+    IF cost_centers_differ = abap_true.
+      ls_message-type    = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
+      ls_message-message = |Unterschiedliche PSP-Elemente im Warenkorb nicht erlaubt.|.
+      io_helper->add_form_message( is_message = ls_message ).
+    ENDIF.
+
     " Adjust Document Type
     " TODO add to customizing table later
     DATA(switch_bsart) = abap_false.
     IF lv_pr_value > 10000 AND ( lv_current_product_type = 'FRE' OR lv_current_product_type = 'RVA' OR lv_current_product_type = 'DIK' OR lv_current_product_type = 'PEV' ).
       switch_bsart = abap_true.
     ELSEIF lv_current_product_type = 'FRE'.
-      " TODO: variable is assigned but never used (ABAP cleaner)
       DATA lv_ekgrp TYPE ekgrp.
       DATA lv_hse   TYPE xfeld.
       DATA(lo_dcf_helper) = NEW zrwtha_cl_dcf_helper( io_context        = io_context
@@ -128,33 +143,6 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
       ENDTRY.
     ENDIF.
 
-    " fill texts from items
-    TRY.
-        DATA(notes) = lt_prod[ 1 ]->get_notes( ).
-        io_helper->get_value( EXPORTING iv_name  = 'TXT_B97'
-                              IMPORTING ev_value = lv_str ).
-        IF lv_str IS INITIAL.
-          io_helper->set_value( iv_name  = 'TXT_B97'
-                                iv_value = notes[ technical_object_type = 'B97' ]-document_text ).
-        ENDIF.
-
-        io_helper->get_value( EXPORTING iv_name  = 'TXT_B95'
-                              IMPORTING ev_value = lv_str ).
-        IF lv_str IS INITIAL.
-          io_helper->set_value( iv_name  = 'TXT_B95'
-                                iv_value = notes[ technical_object_type = 'B95' ]-document_text ).
-        ENDIF.
-
-        io_helper->get_value( EXPORTING iv_name  = 'TXT_B96'
-                              IMPORTING ev_value = lv_str ).
-        IF lv_str IS INITIAL.
-          io_helper->set_value( iv_name  = 'TXT_B96'
-                                iv_value = notes[ technical_object_type = 'B96' ]-document_text ).
-        ENDIF.
-      CATCH cx_sy_itab_line_not_found.
-        " its fine to do nothing here
-    ENDTRY.
-
     " if comming from RFX enable "Begründung Auswahl Anbieter" as mandatory
     LOOP AT lt_prod ASSIGNING FIELD-SYMBOL(<prod>).
       IF <prod>->get_doc( )->get_item_type( ) = 'RFX'.
@@ -187,11 +175,11 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
   METHOD /benmsg/if_dcf_runtime~submit.
     DATA lv_str TYPE string.
 
-    DATA(lo_card) = io_context->get_my_cart( ).
-    IF lo_card IS NOT BOUND.
+    DATA(lo_cart) = io_context->get_my_cart( ).
+    IF lo_cart IS NOT BOUND.
       RETURN.
     ENDIF.
-    DATA(lt_prod) = lo_card->get_products( ).
+    DATA(lt_prod) = lo_cart->get_products( ).
     LOOP AT lt_prod ASSIGNING FIELD-SYMBOL(<line>).
 
       DATA(lo_doc) = <line>->get_doc( ).
@@ -206,43 +194,15 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
 
       lo_doc->set_tech_txt( lt_tech_text ).
 
-
-      " map header texts to items
-      " Bedarfsbegründung B95 to all items
-      io_helper->get_value( EXPORTING iv_name  = 'TXT_B95'
-                            IMPORTING ev_value = lv_str ).
-      DATA(notes) = <line>->get_notes( ).
-      " first check if entry exists, then change it, otherwise add it
-      TRY.
-          notes[ technical_object_type = 'B95' ]-document_text = lv_str.
-        CATCH cx_sy_itab_line_not_found.
-          " entry not there, add it
-          INSERT VALUE #( technical_object_type = 'B95' document_text = lv_str ) INTO TABLE notes.
-      ENDTRY.
-
-      IF sy-tabix = '1'. " only to first one
-        " Begründung Auswahl Anbieter B96
-        io_helper->get_value( EXPORTING iv_name  = 'TXT_B96'
-                              IMPORTING ev_value = lv_str ).
-        TRY.
-            notes[ technical_object_type = 'B96' ]-document_text = lv_str.
-          CATCH cx_sy_itab_line_not_found.
-            " entry not there, add it
-            INSERT VALUE #( technical_object_type = 'B96' document_text = lv_str ) INTO TABLE notes.
-        ENDTRY.
-        " Vergabebegründung B97
-        io_helper->get_value( EXPORTING iv_name  = 'TXT_B97'
-                              IMPORTING ev_value = lv_str ).
-        TRY.
-            notes[ technical_object_type = 'B97' ]-document_text = lv_str.
-          CATCH cx_sy_itab_line_not_found.
-            " entry not there, add it
-            INSERT VALUE #( technical_object_type = 'B97' document_text = lv_str ) INTO TABLE notes.
-        ENDTRY.
-      ENDIF.
-
-      <line>->set_notes( it_notes = notes ).
     ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD cost_center.
+    DATA(wbs_element) = VALUE #( accounting->*-acc_object[ 1 ]-wbs_element-id OPTIONAL ).
+    IF wbs_element IS NOT INITIAL.
+      result = wbs_element+5(6).
+    ENDIF.
   ENDMETHOD.
 
 ENDCLASS.
