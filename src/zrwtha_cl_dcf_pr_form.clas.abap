@@ -53,7 +53,7 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
       IF lv_current_product_type <> first_product_type.
         DATA(product_types_differ) = abap_true.
       ENDIF.
-      IF first_cost_center <> cost_center( REF #( accounting ) ).
+      IF cost_center( REF #( accounting ) ) <> '' and first_cost_center <> cost_center( REF #( accounting ) ).
         DATA(cost_centers_differ) = abap_true.
       ENDIF.
       IF lv_current_product_type = 'NOT'.
@@ -64,7 +64,6 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
 
     ENDLOOP.
 
-    " TODO add to customizing table later
     IF ( lv_pr_value > 1000 AND lv_not = abap_true ) OR ( lv_pr_value > 3000 AND lv_cat = abap_true ).
       ls_message-type    = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
       ls_message-message = |Beschaffung nicht erlaubt, bitte Anforderung aufteilen.|.
@@ -80,7 +79,8 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
 
     IF cost_centers_differ = abap_true.
       ls_message-type    = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
-      ls_message-message = |Unterschiedliche PSP-Elemente im Warenkorb nicht erlaubt.|.
+*      ls_message-message = |Unterschiedliche PSP-Elemente im Warenkorb nicht erlaubt.|.
+      ls_message-message = |Es dürfen nur PSP Elemente aus einer Hochschuleinrichtung verwendet werden.|.
       io_helper->add_form_message( is_message = ls_message ).
     ENDIF.
 
@@ -90,6 +90,7 @@ CLASS zrwtha_cl_dcf_pr_form IMPLEMENTATION.
     IF lv_pr_value > 10000 AND ( lv_current_product_type = 'FRE' OR lv_current_product_type = 'RVA' OR lv_current_product_type = 'DIK' OR lv_current_product_type = 'PEV' ).
       switch_bsart = abap_true.
     ELSEIF lv_current_product_type = 'FRE'.
+      " TODO: variable is assigned but never used (ABAP cleaner)
       DATA lv_ekgrp TYPE ekgrp.
       DATA lv_hse   TYPE xfeld.
       DATA(lo_dcf_helper) = NEW zrwtha_cl_dcf_helper( io_context        = io_context
