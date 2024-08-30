@@ -15,6 +15,14 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
     TYPES responsibilities TYPE HASHED TABLE OF responsibility WITH UNIQUE KEY responsible_agent cost_center role.
     CLASS-DATA cached_responsibilities TYPE responsibilities.
 
+    TYPES: BEGIN OF material_group_approver_tuple,
+             kostl TYPE kostl,
+             matkl TYPE matkl,
+             freig TYPE c LENGTH 12,
+           END OF material_group_approver_tuple,
+           material_group_approver_map TYPE HASHED TABLE OF material_group_approver_tuple WITH UNIQUE KEY kostl matkl.
+    CLASS-DATA cached_material_grp_approv_map TYPE material_group_approver_map.
+
     METHODS constructor
       IMPORTING
         customer_wf_customizing TYPE REF TO /benmsg/cl_wsi_obj_cust_data OPTIONAL.
@@ -106,6 +114,23 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
       RETURNING
         VALUE(result)                  TYPE flat_workflow.
 
+    METHODS cache_material_grp_approv_map.
+
+    METHODS cache_responsibilities.
+
+    METHODS material_grp_requires_approval
+      IMPORTING
+        material_group TYPE /benmsg/bapimereqitem_s-matl_group
+        cost_center    TYPE REF TO cost_center
+      RETURNING
+        VALUE(result)  TYPE abap_bool.
+    METHODS material_group_approver
+      IMPORTING
+        material_group TYPE /benmsg/bapimereqitem_s-matl_group
+        cost_center    TYPE REF TO cost_center
+      RETURNING
+        VALUE(result)  TYPE xubname.
+
 ENDCLASS.
 
 
@@ -169,10 +194,13 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
     CLEAR ct_item_map.
     me->purchase_requisition = CAST /benmsg/cl_wf_obj_cwf_ec_preq( io_wf_obj ).
-    me->purchase_requisition->ecc_get_detail( EXPORTING iv_cwf_filter = 'X'
-                               IMPORTING et_item = purchase_requisition-pritemexp
-                                         et_account = purchase_requisition-praccount
-                                         et_mycart = DATA(mycart) ).
+    me->purchase_requisition->ecc_get_detail(
+      EXPORTING
+        iv_cwf_filter = 'X'
+      IMPORTING
+        et_item = purchase_requisition-pritemexp
+        et_account = purchase_requisition-praccount
+        et_mycart = DATA(mycart) ).
 
     TRY.
         DATA(requester) = requester=>from_purchase_requisition_item(
@@ -201,9 +229,9 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
           external_id = |{ is_step-responsibility }_{ cost_center->external_value( ) }|.
         WHEN responsibility-material_group.
           CHECK item->matl_group IS NOT INITIAL.
-          DATA(material_group_approver) = NEW material_group( item->matl_group )->approver(
-            cost_center = cost_center
-            customer_wf_customizing = cached_customer_wf_customizing( ) ).
+          DATA(material_group_approver) = material_group_approver(
+            material_group = item->matl_group
+            cost_center    = cost_center ).
           CHECK material_group_approver IS NOT INITIAL.
           external_id = |ZRWTHA_WARENGRP_{ material_group_approver }|.
       ENDCASE.
@@ -350,21 +378,11 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     ENDIF.
     result = me->customer_wf_customizing.
 
-    DATA: BEGIN OF response,
-            mapping TYPE user_costcenter_role_mapping,
-          END OF response.
-    DATA dummy_request TYPE c LENGTH 1.
     IF cached_responsibilities IS INITIAL.
-      me->customer_wf_customizing->get_external_data(
-      EXPORTING
-        iv_object   = 'BEN_DATA'
-        iv_action   = 'UserCostCenterRoleMapping'
-        iv_data     = dummy_request
-      IMPORTING
-        ev_data     = response ).
-      cached_responsibilities = CORRESPONDING #( response-mapping MAPPING  responsible_agent = benutzer
-                                                                    cost_center = kostenstelle
-                                                                    role = rolle ).
+      cache_responsibilities( ).
+    ENDIF.
+    IF cached_material_grp_approv_map IS INITIAL.
+      cache_material_grp_approv_map( ).
     ENDIF.
   ENDMETHOD.
 
@@ -469,11 +487,11 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
           ELSE 'no-role' ).
       ENDIF.
 
-      sum_of_item_values = sum_of_item_values + <item>-value_item.
+      sum_of_item_values = sum_of_item_values + COND #( WHEN <item>-value_item IS INITIAL
+                                                        THEN <item>-preq_price
+                                                        ELSE <item>-value_item ).
       IF <item>-matl_group IS NOT INITIAL.
-        IF NEW material_group( material_group = <item>-matl_group )->requires_approval(
-          cost_center = cost_center
-          customer_wf_customizing = cached_customer_wf_customizing( ) ).
+        IF material_grp_requires_approval( material_group = <item>-matl_group cost_center = cost_center ).
           rule_value-material_grp_approval_required = abap_true.
         ENDIF.
       ENDIF.
@@ -576,6 +594,56 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     LOOP AT predicted_uncompacted_workflow ASSIGNING FIELD-SYMBOL(<wf>).
       DELETE result WHERE agent_objid = <wf>-agent_objid AND step_index < <wf>-step_index.
     ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD cache_material_grp_approv_map.
+    DATA: BEGIN OF response,
+            mapping TYPE material_group_approver_map,
+          END OF response.
+    DATA dummy_request TYPE c LENGTH 1.
+    me->customer_wf_customizing->get_external_data(
+    EXPORTING
+      iv_object   = 'BEN_DATA'
+      iv_action   = 'MaterialGroupApproverMapping'
+      iv_data     = dummy_request
+    IMPORTING
+      ev_data     = response ).
+    cached_material_grp_approv_map = response-mapping.
+  ENDMETHOD.
+
+
+  METHOD cache_responsibilities.
+    DATA: BEGIN OF response,
+            mapping TYPE user_costcenter_role_mapping,
+          END OF response.
+    DATA dummy_request TYPE c LENGTH 1.
+    me->customer_wf_customizing->get_external_data(
+    EXPORTING
+      iv_object   = 'BEN_DATA'
+      iv_action   = 'UserCostCenterRoleMapping'
+      iv_data     = dummy_request
+    IMPORTING
+      ev_data     = response ).
+    cached_responsibilities = CORRESPONDING #( response-mapping MAPPING  responsible_agent = benutzer
+                                                                  cost_center = kostenstelle
+                                                                  role = rolle ).
+  ENDMETHOD.
+
+
+  METHOD material_grp_requires_approval.
+    IF material_group_approver( material_group = material_group cost_center = cost_center ) IS NOT INITIAL.
+      result = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD material_group_approver.
+    READ TABLE cached_material_grp_approv_map WITH KEY kostl = cost_center->internal_value( ) matkl = material_group
+      ASSIGNING FIELD-SYMBOL(<approval>).
+    IF sy-subrc = 0.
+      result = <approval>-freig.
+    ENDIF.
   ENDMETHOD.
 
 ENDCLASS.
