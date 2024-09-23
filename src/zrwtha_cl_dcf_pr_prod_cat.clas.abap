@@ -16,8 +16,6 @@ ENDCLASS.
 CLASS zrwtha_cl_dcf_pr_prod_cat IMPLEMENTATION.
   METHOD /benmsg/if_dcf_runtime~change.
 
-
-
   ENDMETHOD.
 
   METHOD /benmsg/if_dcf_runtime~check.
@@ -26,6 +24,18 @@ CLASS zrwtha_cl_dcf_pr_prod_cat IMPLEMENTATION.
 
   METHOD /benmsg/if_dcf_runtime~init.
 
+    DATA(lv_obj_id_parent) = io_parent->/benmsg/if_dcf_parent~get_obj_id( ). " empty when no PR
+    DATA(lo_prod) = io_context->get_product( ).
+    DATA(lv_type) = lo_prod->get_type( ).
+    DATA(lo_doc) = lo_prod->get_doc( ).
+    DATA(lv_sup_id) = lo_doc->get_supplier_id( ).
+    IF lv_sup_id IS INITIAL AND lv_type = 'RFX' AND lv_obj_id_parent IS INITIAL.
+      io_helper->set_attr( iv_name  = 'SEC_RFX_LIFNR'
+                     iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_hidden
+                     iv_value = abap_false ).
+      io_helper->set_attr( iv_name  = 'RFX_LIFNR_SH'
+                     iv_attr  = io_helper->/benmsg/if_dcf_cons~mc_component-attribute-is_required ).
+    ENDIF.
 
   ENDMETHOD.
 
@@ -64,6 +74,15 @@ CLASS zrwtha_cl_dcf_pr_prod_cat IMPLEMENTATION.
         ENDIF.
         lo_prod->set_notes( it_notes = lt_notes ).
       ENDIF.
+    ENDIF.
+
+    " set supplier if empty for RFX
+    DATA ls_sh_values TYPE io_helper->ts_sh_values.
+    io_helper->get_value( EXPORTING iv_name  = 'RFX_LIFNR_SH'
+                          IMPORTING ev_value = ls_sh_values ).
+    IF ls_sh_values-obj_value_prop IS NOT INITIAL.
+      io_context->get_product( )->get_doc( )->set_supplier_id( iv_supplier_id = ls_sh_values-obj_value_prop ).
+      io_context->get_product( )->get_doc( )->set_supplier_name( iv_supplier_name = ls_sh_values-obj_label_prop ).
     ENDIF.
 
   ENDMETHOD.
