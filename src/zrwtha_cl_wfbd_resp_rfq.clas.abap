@@ -17,28 +17,29 @@ CLASS zrwtha_cl_wfbd_resp_rfq IMPLEMENTATION.
 
 
   METHOD /benmsg/if_wf_bd_resp~get_responsible_agents.
-    DATA: lv_profile TYPE /benmsg/ewf_profile,
-          ls_prof_e  TYPE /benmsg/swf_profile_map.
+    DATA dummy_request TYPE c LENGTH 1.
+    TYPES users TYPE STANDARD TABLE OF xubname WITH EMPTY KEY.
+    DATA: BEGIN OF response,
+            users TYPE users,
+          END OF response.
 
-*    et_agents = /benmsg/cl_wf_resp_ctrl=>get_api( )->get_wf_admin( ).
-    et_agents = VALUE #(
-      ( otype = 'US' objid = 'KB558745' )
-      ( otype = 'US' objid = 'FS454989' )
-      ( otype = 'US' objid = 'RL964689' ) ).
+    DATA(purchasing_request_header) = /benmsg/cl_wf_pd_access=>factory( io_wf_obj = io_wf_obj )->get_header( ).
+    " note: because the remote system id is empty in the request, the customer system id is used instead.
+    NEW /benmsg/cl_wsi_obj_cust_data(
+        iv_customer_id = purchasing_request_header-cust_id
+        iv_cust_sys_id = purchasing_request_header-cust_sys_id
+        iv_remote_sys  = purchasing_request_header-cust_sys_id )->get_external_data(
+      EXPORTING
+        iv_action   = 'CentralPurchasingUsers'
+        iv_object   = 'BEN_DATA'
+        iv_data     = dummy_request
+      IMPORTING
+        ev_data     = response ).
 
+    et_agents = VALUE #( FOR user IN response-users ( otype = 'US' objid = user ) ).
     et_profiles = VALUE #(
       FOR agent IN et_agents
       ( proftype = /benmsg/if_wf_c=>obj_cat-cse_us profile = agent-objid ) ).
-
-*    lv_profile = /benmsg/cl_wf_pd_access=>factory( io_wf_obj = io_wf_obj )->get_header( )-created_by.
-*    IF lv_profile IS INITIAL.
-*      lv_profile = 'Myself'.
-*    ENDIF.
-*    ls_prof_e-proftype    = /benmsg/if_wf_c=>obj_cat-cse_us.
-*    ls_prof_e-profile     = lv_profile.
-*
-*    APPEND ls_prof_e TO et_profiles.
-
   ENDMETHOD.
 
 

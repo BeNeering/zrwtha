@@ -50,15 +50,10 @@ CLASS fake_customer_wf_customizing DEFINITION CREATE PUBLIC INHERITING FROM /ben
   PUBLIC SECTION.
     METHODS constructor.
     METHODS get_external_data REDEFINITION.
-    TYPES: BEGIN OF material_group_tuple,
-             kostl TYPE kostl,
-             matkl TYPE matkl,
-             freig TYPE xubname,
-           END OF material_group_tuple,
-           material_group_map TYPE SORTED TABLE OF material_group_tuple WITH UNIQUE KEY kostl matkl.
-    DATA agent_for_material_group TYPE material_group_map.
 
-    TYPES responsibilities TYPE SORTED TABLE OF zrwtha_resp_cwf_ecc_preq=>responsibility WITH UNIQUE KEY cost_center role responsible_agent
+    DATA agent_for_material_group TYPE zrwtha_resp_cwf_ecc_preq=>material_group_approver_map.
+
+    TYPES responsibilities TYPE SORTED TABLE OF zrwtha_resp_cwf_ecc_preq=>t_responsibility WITH UNIQUE KEY cost_center role responsible_agent
       WITH NON-UNIQUE SORTED KEY secondary COMPONENTS responsible_agent.
     DATA responsiblities TYPE responsibilities.
     TYPES: BEGIN OF user_cost_center_pair,
@@ -79,7 +74,7 @@ CLASS fake_customer_wf_customizing IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD get_external_data.
-    FIELD-SYMBOLS <responsibility> TYPE zrwtha_resp_cwf_ecc_preq=>responsibility.
+    FIELD-SYMBOLS <responsibility> TYPE zrwtha_resp_cwf_ecc_preq=>t_responsibility.
     DATA: BEGIN OF kostlfromuser,
             BEGIN OF request,
               user LIKE sy-uname,
@@ -97,6 +92,11 @@ CLASS fake_customer_wf_customizing IMPLEMENTATION.
               freig TYPE xubname,
             END OF response,
           END OF freigfromkostlmatkl.
+    DATA: BEGIN OF materialgroupapprovermapping,
+            BEGIN OF response,
+              mapping TYPE zrwtha_resp_cwf_ecc_preq=>material_group_approver_map,
+            END OF response,
+          END OF materialgroupapprovermapping.
     DATA: BEGIN OF usercostcenterrolemapping,
             BEGIN OF response,
               mapping TYPE user_costcenter_role_mapping,
@@ -107,11 +107,7 @@ CLASS fake_customer_wf_customizing IMPLEMENTATION.
       WHEN 'RolesFromUser'.
         cl_abap_unit_assert=>fail( msg = `Use CRUD call UserCostCenterRoleMapping instead of RolesFromUser` ).
       WHEN 'FreigFromKostlMatkl'.
-        freigfromkostlmatkl-request = iv_data.
-        freigfromkostlmatkl-response-freig = VALUE #( agent_for_material_group[
-          kostl = freigfromkostlmatkl-request-kostl
-          matkl = freigfromkostlmatkl-request-matkl ]-freig OPTIONAL ).
-        ev_data = freigfromkostlmatkl-response.
+        cl_abap_unit_assert=>fail( msg = `Use CRUD call MaterialGroupApproverMapping instead of FreigFromKostlMatkl` ).
       WHEN 'UsersFromRoles'.
         cl_abap_unit_assert=>fail( msg = `Use CRUD call UserCostCenterRoleMapping instead of UsersFromRoles` ).
       WHEN 'KostlFromUser'.
@@ -128,6 +124,9 @@ CLASS fake_customer_wf_customizing IMPLEMENTATION.
                   kostenstelle = cost_center
                   rolle = role ).
         ev_data = usercostcenterrolemapping-response.
+      WHEN 'MaterialGroupApproverMapping'.
+        materialgroupapprovermapping-response-mapping = agent_for_material_group.
+        ev_data = materialgroupapprovermapping-response.
       WHEN OTHERS.
         cl_abap_unit_assert=>fail( |unexpected CRUD call { iv_action }| ).
     ENDCASE.
@@ -213,6 +212,8 @@ CLASS unit_tests DEFINITION FOR TESTING
       invalid_item_cost_center FOR TESTING RAISING cx_static_check,
       fallback_user FOR TESTING RAISING cx_static_check,
       material_grp_without_approver FOR TESTING RAISING cx_static_check,
+      "! use field item-preq_price instead of item-item_value when item_value is initial
+      use_preq_price_instead_of_ival FOR TESTING RAISING cx_static_check,
       setup,
       teardown,
       assert
@@ -1020,6 +1021,29 @@ CLASS unit_tests IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD use_preq_price_instead_of_ival.
+    given_customizing_of_responsib( ).
+    fake_purchase_requisition->items = VALUE #(
+      ( preq_item = '00010' value_item = 0 preq_price = 500 preq_name = 'AGENT' )
+      ( preq_item = '00020' value_item = 0 preq_price = 1   preq_name = 'AGENT' )
+      ( preq_item = '00030' value_item = 0 preq_price = 1   preq_name = 'AGENT' ) ).
+    fake_purchase_requisition->accounts = VALUE #(
+      ( preq_item = '00010' wbs_element = '999991111119999' )
+      ( preq_item = '00020' wbs_element = '999991111119999' )
+      ( preq_item = '00030' wbs_element = '999991111119999' ) ).
+    given_requester( 'ANFOR-AGENT1' ).
+
+    steps_expected_to_be_valid = VALUE #(
+      ( responsibility = responsibilities-kauf decisions = VALUE #(
+        ( external_id = |{ responsibilities-kauf }_111111| agents = VALUE #(
+          ( 'KAUFM-AGENT' ) ) ) ) )
+      ( responsibility = responsibilities-sach decisions = VALUE #(
+        ( external_id = |{ responsibilities-sach }_111111| agents = VALUE #(
+          ( 'ZEICH-AGENT' ) ) ) ) ) ).
+    assert( steps_expected_to_be_valid ).
+  ENDMETHOD.
+
+
   METHOD assert.
     DATA item_map TYPE /benmsg/twf_bd_dec_itmmap.
     LOOP AT all_steps ASSIGNING FIELD-SYMBOL(<step>).
@@ -1088,6 +1112,7 @@ CLASS unit_tests IMPLEMENTATION.
   METHOD teardown.
     CLEAR is_valid.
     CLEAR cut->cached_responsibilities.
+    CLEAR cut->cached_material_grp_approv_map.
   ENDMETHOD.
 
   METHOD given_emergency_order_process.
@@ -1308,36 +1333,36 @@ CLASS test_mapping_items_2_decisions IMPLEMENTATION.
 ENDCLASS.
 
 
+CLASS responsibility_test DEFINITION FINAL FOR TESTING
+  DURATION SHORT
+  RISK LEVEL HARMLESS.
 
-*CLASS new_remote_interface DEFINITION FINAL FOR TESTING
-*  DURATION SHORT
-*  RISK LEVEL HARMLESS.
-*
-*  PRIVATE SECTION.
-*    METHODS:
-*      first_test FOR TESTING RAISING cx_static_check.
-*ENDCLASS.
-*
-*
-*CLASS new_remote_interface IMPLEMENTATION.
-*
-*  METHOD first_test.
-*    "TODO: remove this code
-*    DATA dummy_request TYPE c LENGTH 1.
-*    DATA: BEGIN OF response,
-*            mapping TYPE user_costcenter_role_mapping,
-*          END OF response.
-*    NEW /benmsg/cl_wsi_obj_cust_data(
-*        iv_customer_id = '1000004036'
-*        iv_cust_sys_id = 'DE1CLNT120'
-*        iv_remote_sys  = 'DE1CLNT120' )->get_external_data(
-*      EXPORTING
-*        iv_object   = 'BEN_DATA'
-*        iv_action   = 'UserCostCenterRoleMapping'
-*        iv_data     = dummy_request
-*      IMPORTING
-*        ev_data     = response ).
-*    cl_abap_unit_assert=>assert_equals( exp = 34 act = lines( response-mapping ) ).
-*  ENDMETHOD.
-*
-*ENDCLASS.
+  PRIVATE SECTION.
+    METHODS:
+      "! throws exception on invalid responsibility value
+      throws_on_invalid_responsib FOR TESTING RAISING cx_static_check,
+      "! determines if responsibility is material group related
+      checks_material_group_related FOR TESTING RAISING cx_static_check.
+ENDCLASS.
+
+
+CLASS responsibility_test IMPLEMENTATION.
+
+  METHOD throws_on_invalid_responsib.
+    TRY.
+        NEW responsibility( 'INVALID_VALUE' ).
+        cl_abap_unit_assert=>fail( ).
+      CATCH invalid_resposibility.
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD checks_material_group_related.
+    cl_abap_unit_assert=>assert_true( NEW responsibility( 'ZRWTHA_WARENGRP' )->is_material_group_related( ) ).
+
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_ALL' )->is_material_group_related( ) ).
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_PG_TECHNISCH' )->is_material_group_related( ) ).
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_KAUFM' )->is_material_group_related( ) ).
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_SACHLICH' )->is_material_group_related( ) ).
+  ENDMETHOD.
+
+ENDCLASS.

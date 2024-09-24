@@ -151,11 +151,14 @@ CLASS zrwtha_cl_dcf_pr_freetext IMPLEMENTATION.
 
           " fallback if no label found
           IF lv_rfx_process IS INITIAL.
-            lv_rfx_process = '/BENMSG/OTRDCF/ADD_TO_BASKET'.
+            DATA(lv_rfx_label) = |/BENMSG/OTRDCF/ADD_TO_BASKET|.
+          ELSE.
+            " adding the right prefix
+            lv_rfx_label = |ZRWTHADCF/{ lv_rfx_process }|.
           ENDIF.
 
           io_helper->set_label( iv_name  = 'CREATE_RFX'
-                                iv_value = lv_rfx_process ).
+                                iv_value = lv_rfx_label ).
         ENDIF.
 
 *          IF lv_rfx_process EQ 'DIK'.

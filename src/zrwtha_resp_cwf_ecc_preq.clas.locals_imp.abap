@@ -1,10 +1,49 @@
-CONSTANTS: BEGIN OF responsibility,
-             all            TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_ALL',
-             tech           TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_PG_TECHNISCH',
-             kauf           TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_KAUFM',
-             material_group TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_WARENGRP',
-             sach           TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_SACHLICH',
-           END OF responsibility.
+CLASS responsibility DEFINITION CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    CONSTANTS:
+      all            TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_ALL',
+      technical      TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_PG_TECHNISCH',
+      purchasing     TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_KAUFM',
+      material_group TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_WARENGRP',
+      subject_matter TYPE /benmsg/swf_bd_step-responsibility VALUE 'ZRWTHA_SACHLICH'.
+
+    METHODS constructor
+      IMPORTING
+        value TYPE /benmsg/swf_bd_step-responsibility
+      RAISING
+        invalid_resposibility.
+
+    METHODS is_material_group_related
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
+    DATA value TYPE /benmsg/swf_bd_step-responsibility READ-ONLY.
+ENDCLASS.
+
+CLASS responsibility IMPLEMENTATION.
+
+  METHOD constructor.
+    CASE value.
+      WHEN  me->all
+      OR    me->technical
+      OR    me->purchasing
+      OR    me->material_group
+      OR    me->subject_matter.
+        me->value = value.
+      WHEN OTHERS.
+        RAISE EXCEPTION TYPE invalid_resposibility.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD is_material_group_related.
+    IF me->value = me->material_group.
+      result = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.
+
 
 CLASS agents DEFINITION CREATE PUBLIC.
 
@@ -125,59 +164,16 @@ CLASS requester IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD from_purchase_requisition_item.
-    DATA(purchase_requsition_requester) = VALUE #( item[ delete_ind = abap_false ]-preq_name OPTIONAL ).
+    DATA(purchase_requisition_requester) = VALUE #( item[ delete_ind = abap_false ]-preq_name OPTIONAL ).
     DATA(mycart_creator) = mycart-created_by.
-    IF purchase_requsition_requester IS INITIAL AND mycart_creator IS INITIAL.
+    IF purchase_requisition_requester IS INITIAL AND mycart_creator IS INITIAL.
       RAISE EXCEPTION TYPE empty_requester.
     ELSE.
       result = NEW requester( COND #(
-        WHEN purchase_requsition_requester IS NOT INITIAL
-        THEN purchase_requsition_requester
+        WHEN purchase_requisition_requester IS NOT INITIAL
+        THEN purchase_requisition_requester
         ELSE mycart_creator ) ).
     ENDIF.
-  ENDMETHOD.
-
-ENDCLASS.
-
-
-
-CLASS material_group IMPLEMENTATION.
-
-  METHOD constructor.
-    IF material_group IS INITIAL.
-      RAISE EXCEPTION TYPE empty_material_group.
-    ENDIF.
-    me->material_group = material_group.
-  ENDMETHOD.
-
-  METHOD requires_approval.
-    IF me->approver(
-      cost_center = cost_center
-      customer_wf_customizing = customer_wf_customizing ) IS NOT INITIAL.
-      result = abap_true.
-    ENDIF.
-  ENDMETHOD.
-
-  METHOD approver.
-    DATA: BEGIN OF request,
-            kostl TYPE kostl,
-            matkl TYPE matkl,
-          END OF request,
-          BEGIN OF response,
-            freig TYPE xubname,
-          END OF response.
-
-    request-kostl = cost_center->internal_value( ).
-    request-matkl = me->material_group.
-
-    customer_wf_customizing->get_external_data(
-      EXPORTING
-        iv_object   = 'BEN_DATA'
-        iv_action   = 'FreigFromKostlMatkl'
-        iv_data     = request
-      IMPORTING
-        ev_data     = response ).
-    result = response-freig.
   ENDMETHOD.
 
 ENDCLASS.
