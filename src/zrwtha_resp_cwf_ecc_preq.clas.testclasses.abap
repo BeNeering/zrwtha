@@ -53,7 +53,7 @@ CLASS fake_customer_wf_customizing DEFINITION CREATE PUBLIC INHERITING FROM /ben
 
     DATA agent_for_material_group TYPE zrwtha_resp_cwf_ecc_preq=>material_group_approver_map.
 
-    TYPES responsibilities TYPE SORTED TABLE OF zrwtha_resp_cwf_ecc_preq=>responsibility WITH UNIQUE KEY cost_center role responsible_agent
+    TYPES responsibilities TYPE SORTED TABLE OF zrwtha_resp_cwf_ecc_preq=>t_responsibility WITH UNIQUE KEY cost_center role responsible_agent
       WITH NON-UNIQUE SORTED KEY secondary COMPONENTS responsible_agent.
     DATA responsiblities TYPE responsibilities.
     TYPES: BEGIN OF user_cost_center_pair,
@@ -74,7 +74,7 @@ CLASS fake_customer_wf_customizing IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD get_external_data.
-    FIELD-SYMBOLS <responsibility> TYPE zrwtha_resp_cwf_ecc_preq=>responsibility.
+    FIELD-SYMBOLS <responsibility> TYPE zrwtha_resp_cwf_ecc_preq=>t_responsibility.
     DATA: BEGIN OF kostlfromuser,
             BEGIN OF request,
               user LIKE sy-uname,
@@ -1333,36 +1333,36 @@ CLASS test_mapping_items_2_decisions IMPLEMENTATION.
 ENDCLASS.
 
 
+CLASS responsibility_test DEFINITION FINAL FOR TESTING
+  DURATION SHORT
+  RISK LEVEL HARMLESS.
 
-*CLASS new_remote_interface DEFINITION FINAL FOR TESTING
-*  DURATION SHORT
-*  RISK LEVEL HARMLESS.
-*
-*  PRIVATE SECTION.
-*    METHODS:
-*      first_test FOR TESTING RAISING cx_static_check.
-*ENDCLASS.
-*
-*
-*CLASS new_remote_interface IMPLEMENTATION.
-*
-*  METHOD first_test.
-*    "TODO: remove this code
-*    DATA dummy_request TYPE c LENGTH 1.
-*    DATA: BEGIN OF response,
-*            mapping TYPE user_costcenter_role_mapping,
-*          END OF response.
-*    NEW /benmsg/cl_wsi_obj_cust_data(
-*        iv_customer_id = '1000004036'
-*        iv_cust_sys_id = 'DE1CLNT120'
-*        iv_remote_sys  = 'DE1CLNT120' )->get_external_data(
-*      EXPORTING
-*        iv_object   = 'BEN_DATA'
-*        iv_action   = 'UserCostCenterRoleMapping'
-*        iv_data     = dummy_request
-*      IMPORTING
-*        ev_data     = response ).
-*    cl_abap_unit_assert=>assert_equals( exp = 34 act = lines( response-mapping ) ).
-*  ENDMETHOD.
-*
-*ENDCLASS.
+  PRIVATE SECTION.
+    METHODS:
+      "! throws exception on invalid responsibility value
+      throws_on_invalid_responsib FOR TESTING RAISING cx_static_check,
+      "! determines if responsibility is material group related
+      checks_material_group_related FOR TESTING RAISING cx_static_check.
+ENDCLASS.
+
+
+CLASS responsibility_test IMPLEMENTATION.
+
+  METHOD throws_on_invalid_responsib.
+    TRY.
+        NEW responsibility( 'INVALID_VALUE' ).
+        cl_abap_unit_assert=>fail( ).
+      CATCH invalid_resposibility.
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD checks_material_group_related.
+    cl_abap_unit_assert=>assert_true( NEW responsibility( 'ZRWTHA_WARENGRP' )->is_material_group_related( ) ).
+
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_ALL' )->is_material_group_related( ) ).
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_PG_TECHNISCH' )->is_material_group_related( ) ).
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_KAUFM' )->is_material_group_related( ) ).
+    cl_abap_unit_assert=>assert_false( NEW responsibility( 'ZRWTHA_SACHLICH' )->is_material_group_related( ) ).
+  ENDMETHOD.
+
+ENDCLASS.

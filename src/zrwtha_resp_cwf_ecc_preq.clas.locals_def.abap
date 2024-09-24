@@ -135,32 +135,7 @@ ENDCLASS.
 CLASS empty_material_group DEFINITION CREATE PUBLIC INHERITING FROM cx_dynamic_check.
 ENDCLASS.
 
-
-CLASS material_group DEFINITION CREATE PUBLIC.
-  PUBLIC SECTION.
-    METHODS constructor
-      IMPORTING
-        material_group TYPE matkl
-      RAISING
-        empty_material_group.
-
-    METHODS requires_approval
-      IMPORTING
-        cost_center             TYPE REF TO cost_center
-        customer_wf_customizing TYPE REF TO /benmsg/cl_wsi_obj_cust_data
-      RETURNING
-        VALUE(result)           TYPE abap_bool.
-
-    METHODS approver
-      IMPORTING
-        cost_center             TYPE REF TO cost_center
-        customer_wf_customizing TYPE REF TO /benmsg/cl_wsi_obj_cust_data
-      RETURNING
-        VALUE(result)           TYPE xubname.
-
-  PRIVATE SECTION.
-    DATA material_group TYPE matkl.
-
+CLASS invalid_resposibility DEFINITION CREATE PUBLIC INHERITING FROM cx_dynamic_check.
 ENDCLASS.
 
 

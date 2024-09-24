@@ -7,12 +7,13 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
     INTERFACES /benmsg/if_wf_bd_resp.
     INTERFACES if_badi_interface.
     TYPES tt_users TYPE TABLE OF xubname WITH DEFAULT KEY .
-    TYPES: BEGIN OF responsibility,
+
+    TYPES: BEGIN OF t_responsibility,
              responsible_agent TYPE xubname,
              cost_center       TYPE kostl,
              role              TYPE agr_name,
-           END OF responsibility.
-    TYPES responsibilities TYPE HASHED TABLE OF responsibility WITH UNIQUE KEY responsible_agent cost_center role.
+           END OF t_responsibility.
+    TYPES responsibilities TYPE HASHED TABLE OF t_responsibility WITH UNIQUE KEY responsible_agent cost_center role.
     CLASS-DATA cached_responsibilities TYPE responsibilities.
 
     TYPES: BEGIN OF material_group_approver_tuple,
@@ -26,6 +27,7 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
     METHODS constructor
       IMPORTING
         customer_wf_customizing TYPE REF TO /benmsg/cl_wsi_obj_cust_data OPTIONAL.
+
   PROTECTED SECTION.
     DATA purchase_requisition TYPE REF TO /benmsg/cl_wf_obj_cwf_ec_preq .
 
@@ -89,6 +91,7 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
     METHODS cached_customer_wf_customizing
       RETURNING
         VALUE(result) TYPE REF TO /benmsg/cl_wsi_obj_cust_data.
+
     METHODS predicted_workflow_steps
       IMPORTING
         workflow_shape TYPE char5
@@ -124,6 +127,7 @@ CLASS zrwtha_resp_cwf_ecc_preq DEFINITION
         cost_center    TYPE REF TO cost_center
       RETURNING
         VALUE(result)  TYPE abap_bool.
+
     METHODS material_group_approver
       IMPORTING
         material_group TYPE /benmsg/bapimereqitem_s-matl_group
@@ -187,10 +191,9 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
 
   METHOD /benmsg/if_wf_bd_resp~map_items_to_decisions.
-    DATA: map                  TYPE REF TO /benmsg/swf_bd_dec_itmmap,
-          purchase_requisition TYPE /benmsg/bapipr_s,
-          item                 TYPE REF TO /benmsg/bapimereqitem_s,
-          cost_center          TYPE REF TO cost_center.
+    DATA: map         TYPE REF TO /benmsg/swf_bd_dec_itmmap,
+          item        TYPE REF TO /benmsg/bapimereqitem_s,
+          cost_center TYPE REF TO cost_center.
 
     CLEAR ct_item_map.
     me->purchase_requisition = CAST /benmsg/cl_wf_obj_cwf_ec_preq( io_wf_obj ).
@@ -198,17 +201,17 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
       EXPORTING
         iv_cwf_filter = 'X'
       IMPORTING
-        et_item = purchase_requisition-pritemexp
-        et_account = purchase_requisition-praccount
+        et_item = DATA(items)
+        et_account = DATA(accounts)
         et_mycart = DATA(mycart) ).
 
     TRY.
         DATA(requester) = requester=>from_purchase_requisition_item(
-          item            = purchase_requisition-pritemexp
+          item            = items
           mycart          = mycart ).
         cost_center = cost_center=>from_item_or_requester(
-          item                       = purchase_requisition-pritemexp[ delete_ind = abap_false ]
-          item_accounts              = purchase_requisition-praccount
+          item                       = items[ delete_ind = abap_false ]
+          item_accounts              = accounts
           requester                  = requester
           customer_wf_customizing    = cached_customer_wf_customizing( ) ).
       CATCH empty_requester
@@ -220,22 +223,17 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
         RAISE EXCEPTION TYPE precondition_violated EXPORTING previous = exc.
     ENDTRY.
     DATA(external_id) = |{ is_step-responsibility }|.
-    LOOP AT purchase_requisition-pritemexp REFERENCE INTO item WHERE delete_ind EQ space.
-      CASE is_step-responsibility.
-        WHEN  responsibility-all
-        OR    responsibility-kauf
-        OR    responsibility-sach
-        OR    responsibility-tech.
-          external_id = |{ is_step-responsibility }_{ cost_center->external_value( ) }|.
-        WHEN responsibility-material_group.
-          CHECK item->matl_group IS NOT INITIAL.
-          DATA(material_group_approver) = material_group_approver(
-            material_group = item->matl_group
-            cost_center    = cost_center ).
-          CHECK material_group_approver IS NOT INITIAL.
-          external_id = |ZRWTHA_WARENGRP_{ material_group_approver }|.
-      ENDCASE.
-
+    LOOP AT items REFERENCE INTO item WHERE delete_ind EQ space.
+      IF NEW responsibility( is_step-responsibility )->is_material_group_related( ) = abap_false.
+        external_id = |{ is_step-responsibility }_{ cost_center->external_value( ) }|.
+      ELSE.
+        CHECK item->matl_group IS NOT INITIAL.
+        DATA(material_group_approver) = material_group_approver(
+          material_group = item->matl_group
+          cost_center    = cost_center ).
+        CHECK material_group_approver IS NOT INITIAL.
+        external_id = |ZRWTHA_WARENGRP_{ material_group_approver }|.
+      ENDIF.
       READ TABLE ct_item_map REFERENCE INTO map WITH KEY external_id = external_id.
       IF ct_item_map IS INITIAL OR sy-subrc IS NOT INITIAL.
         INSERT INITIAL LINE INTO TABLE ct_item_map REFERENCE INTO map.
@@ -253,10 +251,7 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
     DATA users_for_role TYPE zrwtha_resp_cwf_ecc_preq=>tt_users.
 
     DATA(cost_center_or_agent) = substring_after( val = decision-external_id sub = |{ decision-responsibility }_| ).
-    IF decision-responsibility = responsibility-tech OR
-       decision-responsibility = responsibility-kauf OR
-       decision-responsibility = responsibility-all OR
-       decision-responsibility = responsibility-sach.
+    IF NEW responsibility( decision-responsibility )->is_material_group_related( ) = abap_false.
       TRY.
           users_for_role = users_for_responsibility(
             cost_center = NEW #( CONV #( cost_center_or_agent ) )
@@ -264,7 +259,7 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
         CATCH invalid_cost_center.
           RAISE EXCEPTION TYPE invariant_violated.
       ENDTRY.
-    ELSEIF decision-responsibility = 'ZRWTHA_WARENGRP'.
+    ELSE.
       IF cost_center_or_agent IS NOT INITIAL.
         INSERT CONV #( cost_center_or_agent ) INTO TABLE users_for_role.
       ELSE.
@@ -313,15 +308,15 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
 
 
   METHOD users_for_responsibility.
-    FIELD-SYMBOLS <responsiblity> TYPE zrwtha_resp_cwf_ecc_preq=>responsibility.
+    FIELD-SYMBOLS <responsiblity> TYPE zrwtha_resp_cwf_ecc_preq=>t_responsibility.
 
     DATA(role) = SWITCH agr_name( i_responsibility
-      WHEN responsibility-tech THEN 'Z_GHBS:04_GENEHMIGUNG-FACHL'
-      WHEN responsibility-kauf THEN 'Z_GHBS:03_GENEHMIGUNG-KAUFM'
-      WHEN responsibility-sach THEN 'Z_GHBS:05_ZEICHNUNGSBEFUGTER'
-      WHEN responsibility-all  THEN 'ALL' ).
+      WHEN responsibility=>technical THEN 'Z_GHBS:04_GENEHMIGUNG-FACHL'
+      WHEN responsibility=>purchasing THEN 'Z_GHBS:03_GENEHMIGUNG-KAUFM'
+      WHEN responsibility=>subject_matter THEN 'Z_GHBS:05_ZEICHNUNGSBEFUGTER'
+      WHEN responsibility=>all  THEN 'ALL' ).
 
-    IF i_responsibility = responsibility-all.
+    IF i_responsibility = responsibility=>all.
       LOOP AT cached_responsibilities ASSIGNING <responsiblity>
         WHERE   cost_center = cost_center->internal_value( ).
         INSERT <responsiblity>-responsible_agent INTO TABLE result.
@@ -390,19 +385,19 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
   METHOD predicted_workflow_steps.
     DATA: BEGIN OF workflow_step_schema,
             all            TYPE predicted_workflow_step,
-            tech           TYPE predicted_workflow_step,
-            kauf           TYPE predicted_workflow_step,
+            technical      TYPE predicted_workflow_step,
+            purchasing     TYPE predicted_workflow_step,
             material_group TYPE predicted_workflow_step,
-            sach           TYPE predicted_workflow_step,
+            subject_matter TYPE predicted_workflow_step,
           END OF workflow_step_schema.
 
     "WARNING: this couples to the order of the steps and their index in the customizing of the workflow schema
     workflow_step_schema = VALUE #(
-      all = VALUE #( responsibility = responsibility-all step_idx_cfg = 010 )
-      tech = VALUE #( responsibility = responsibility-tech step_idx_cfg = 100 )
-      kauf = VALUE #( responsibility = responsibility-kauf step_idx_cfg = 200 )
-      material_group = VALUE #( responsibility = responsibility-material_group step_idx_cfg = 300 )
-      sach = VALUE #( responsibility = responsibility-sach step_idx_cfg = 400 ) ).
+      all = VALUE #( responsibility = responsibility=>all step_idx_cfg = 010 )
+      technical = VALUE #( responsibility = responsibility=>technical step_idx_cfg = 100 )
+      purchasing = VALUE #( responsibility = responsibility=>purchasing step_idx_cfg = 200 )
+      material_group = VALUE #( responsibility = responsibility=>material_group step_idx_cfg = 300 )
+      subject_matter = VALUE #( responsibility = responsibility=>subject_matter step_idx_cfg = 400 ) ).
 
     CASE workflow_shape.
       WHEN 'wf0'.
@@ -415,21 +410,21 @@ CLASS zrwtha_resp_cwf_ecc_preq IMPLEMENTATION.
         result = VALUE #( ( workflow_step_schema-all )
                           ( workflow_step_schema-material_group ) ).
       WHEN 'wf4'.
-        result = VALUE #( ( workflow_step_schema-kauf )
-                          ( workflow_step_schema-sach ) ).
+        result = VALUE #( ( workflow_step_schema-purchasing )
+                          ( workflow_step_schema-subject_matter ) ).
       WHEN 'wf5'.
-        result = VALUE #( ( workflow_step_schema-kauf )
+        result = VALUE #( ( workflow_step_schema-purchasing )
                           ( workflow_step_schema-material_group )
-                          ( workflow_step_schema-sach ) ).
+                          ( workflow_step_schema-subject_matter ) ).
       WHEN 'wf6'.
-        result = VALUE #( ( workflow_step_schema-tech )
-                          ( workflow_step_schema-kauf )
-                          ( workflow_step_schema-sach ) ).
+        result = VALUE #( ( workflow_step_schema-technical )
+                          ( workflow_step_schema-purchasing )
+                          ( workflow_step_schema-subject_matter ) ).
       WHEN 'wf7'.
-        result = VALUE #( ( workflow_step_schema-tech )
-                          ( workflow_step_schema-kauf )
+        result = VALUE #( ( workflow_step_schema-technical )
+                          ( workflow_step_schema-purchasing )
                           ( workflow_step_schema-material_group )
-                          ( workflow_step_schema-sach ) ).
+                          ( workflow_step_schema-subject_matter ) ).
       WHEN 'error'.
         " An explicit error was defined for the current parameters. Check the rules table.
         RAISE EXCEPTION TYPE precondition_violated.
