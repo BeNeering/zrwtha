@@ -9,6 +9,8 @@ CLASS zrwtha_cl_dcf_sup_create DEFINITION
     INTERFACES if_badi_interface .
   PROTECTED SECTION.
   PRIVATE SECTION.
+    CONSTANTS supplier_creation_mail TYPE ppfdtt VALUE 'ZRWTHA_SUP_CREATE'.
+
     "! returns form data for all fields in the return structure
     METHODS form_data
       IMPORTING
@@ -63,81 +65,55 @@ CLASS zrwtha_cl_dcf_sup_create DEFINITION
       IMPORTING
         form_data TYPE form_fields
         helper    TYPE REF TO /benmsg/cl_dcf_change_bdi_h.
+
+    METHODS mail_request
+      IMPORTING
+        form_data     TYPE form_fields
+        employee_data TYPE /benmsg/cl_dc4_models=>ts_employee_data
+        context       TYPE REF TO /benmsg/cl_dcf_ctx
+      RETURNING
+        VALUE(result) TYPE /benmsg/cl_mail_ctrl=>ty_s_mail_request.
+
+    METHODS mail_not_sent
+      IMPORTING
+        helper TYPE REF TO /benmsg/cl_dcf_change_bdi_h.
+
+    METHODS mail_successfully_sent
+      IMPORTING
+        helper TYPE REF TO /benmsg/cl_dcf_change_bdi_h.
+
+    "! request missing fields from user
+    METHODS request_missng_fields_from_usr
+      IMPORTING
+        helper    TYPE REF TO /benmsg/cl_dcf_change_bdi_h
+        form_data TYPE form_fields.
 ENDCLASS.
 
 
 
 CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
   METHOD /benmsg/if_dcf_runtime~change.
-    DATA: lo_mail_ctrl      TYPE REF TO /benmsg/cl_mail_ctrl,
-          lv_action         TYPE ppfdtt,
-          ls_response       TYPE /benmsg/cl_mail_ctrl=>ty_s_mail_response,
-          ls_mail_request   TYPE /benmsg/cl_mail_ctrl=>ty_s_mail_request,
-          ls_mail_recipient TYPE /benmsg/cl_mail_ctrl=>ty_s_recipient,
-          ls_param          TYPE /benmsg/cl_mail_ctrl=>ty_s_param,
-          ls_message        TYPE /benmsg/cl_dcf_mdl=>ts_form_message.
-
     IF iv_trigger EQ 'SEND_EMAIL'.
       DATA(form_data) = form_data( io_helper ).
       IF required_fields_are_supplied( form_data ).
-        "All required fields are maintained. Send out email.
-        lv_action = 'ZRWTHA_SUP_CREATE'. " 'ZDEMO_SUP_CREATE'.
-        CLEAR ls_mail_request.
 
-        ls_mail_request-custid = is_employee_data-root_id.
-        ls_mail_request-lang = 'DE'.
-        ls_mail_request-type = lv_action.
+        NEW /benmsg/cl_mail_ctrl( )->send_message(
+          EXPORTING
+            ip_action   = supplier_creation_mail
+            is_request  = mail_request(
+              form_data     = form_data
+              employee_data = is_employee_data
+              context       = io_context )
+          IMPORTING
+            es_response =  DATA(response) ).
 
-        DATA(lr_product) = io_context->get_product( ).
-        CHECK lr_product IS BOUND.
-        DATA(lr_doc) = lr_product->get_doc( ).
-        CHECK lr_doc IS BOUND.
-        DATA(lt_doc_fields) = lr_doc->get_doc_fields( ).
-        TRY.
-            DATA(lv_email_to) = lt_doc_fields[ name = 'MAIL' ]-value.
-          CATCH cx_sy_itab_line_not_found.
-            " its fine to do nothing here
-        ENDTRY.
-
-        IF lv_email_to IS NOT INITIAL.
-          CLEAR ls_mail_recipient.
-          ls_mail_recipient-email = lv_email_to.
-          APPEND ls_mail_recipient TO ls_mail_request-recipients.
-        ENDIF.
-
-        INSERT LINES OF params_from_employee_data( is_employee_data ) INTO TABLE ls_mail_request-params.
-
-        "add parameters for email template
-        INSERT LINES OF params_from_form_data( form_data ) INTO TABLE ls_mail_request-params.
-
-        CREATE OBJECT lo_mail_ctrl.
-        lo_mail_ctrl->send_message(
-        EXPORTING
-          ip_action   = lv_action  " PPF: Name of Action Definition
-          is_request  = ls_mail_request
-        IMPORTING
-          es_response =  ls_response   " Response in JSON format
-        ).
-
-        IF ls_response-access IS INITIAL OR ls_response-success IS INITIAL.
-          CLEAR ls_message.
-          ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
-          ls_message-message = |Email nicht versendet. Versuchen Sie es erneut|.
-          io_helper->add_form_message( is_message = ls_message ).
-        ELSEIF ls_response-success IS NOT INITIAL.
-          CLEAR ls_message.
-          ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-info.
-          ls_message-message = |Email wurde versendet|.
-          io_helper->add_form_message( is_message = ls_message ).
-          clear_form( io_helper ).
+        IF response-access IS INITIAL OR response-success IS INITIAL.
+          mail_not_sent( io_helper ).
+        ELSEIF response-success IS NOT INITIAL.
+          mail_successfully_sent( io_helper ).
         ENDIF.
       ELSE.
-        "Give form message to fill out required data
-        CLEAR ls_message.
-        ls_message-type = io_helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
-        ls_message-message = |Bitte füllen Sie alle benötigten Felder aus|.
-        io_helper->add_form_message( is_message = ls_message ).
-        toggle_required_fields_err_msg( form_data = form_data helper = io_helper ).
+        request_missng_fields_from_usr( helper = io_helper form_data = form_data ).
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -147,7 +123,7 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD /benmsg/if_dcf_runtime~init.
-    io_helper->set_value( iv_name  = 'INCO' iv_value = 'LFE (frei Leistungs- und Erfüllungsort)' ).
+    io_helper->set_value( iv_name  = 'INCO' iv_value = TEXT-LFE ).
   ENDMETHOD.
 
   METHOD /benmsg/if_dcf_runtime~submit.
@@ -252,6 +228,47 @@ CLASS zrwtha_cl_dcf_sup_create IMPLEMENTATION.
         helper->clear_message( CONV #( <component> ) ).
       ENDIF.
     ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD mail_request.
+    TRY.
+        result-custid = employee_data-root_id.
+        result-lang = 'DE'.
+        result-type = supplier_creation_mail.
+        DATA(lt_doc_fields) = context->get_product( )->get_doc( )->get_doc_fields( ).
+        INSERT VALUE #( email = lt_doc_fields[ name = 'MAIL' ]-value ) INTO TABLE result-recipients.
+        INSERT LINES OF params_from_employee_data( employee_data ) INTO TABLE result-params.
+        INSERT LINES OF params_from_form_data( form_data ) INTO TABLE result-params.
+      CATCH cx_sy_ref_is_initial
+            cx_sy_itab_line_not_found.
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD mail_not_sent.
+    DATA error_message TYPE /benmsg/cl_dcf_mdl=>ts_form_message.
+    error_message-type = helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
+    error_message-message = TEXT-002.
+    helper->add_form_message( is_message = error_message ).
+  ENDMETHOD.
+
+
+  METHOD mail_successfully_sent.
+    DATA success_message TYPE /benmsg/cl_dcf_mdl=>ts_form_message.
+    success_message-type = helper->/benmsg/if_dcf_cons~mc_component-message-type-info.
+    success_message-message = TEXT-003.
+    helper->add_form_message( is_message = success_message ).
+    clear_form( helper ).
+  ENDMETHOD.
+
+
+  METHOD request_missng_fields_from_usr.
+    DATA error_message TYPE /benmsg/cl_dcf_mdl=>ts_form_message.
+    error_message-type = helper->/benmsg/if_dcf_cons~mc_component-message-type-error.
+    error_message-message = TEXT-004.
+    helper->add_form_message( is_message = error_message ).
+    toggle_required_fields_err_msg( form_data = form_data helper = helper ).
   ENDMETHOD.
 
 ENDCLASS.

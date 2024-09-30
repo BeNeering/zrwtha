@@ -18,6 +18,30 @@
      <ENTRY>not supplied</ENTRY>
      <LENGTH>30</LENGTH>
     </item>
+    <item>
+     <ID>I</ID>
+     <KEY>002</KEY>
+     <ENTRY>E-Mail not sent. Please try again.</ENTRY>
+     <LENGTH>68</LENGTH>
+    </item>
+    <item>
+     <ID>I</ID>
+     <KEY>003</KEY>
+     <ENTRY>E-Mail has been sent.</ENTRY>
+     <LENGTH>44</LENGTH>
+    </item>
+    <item>
+     <ID>I</ID>
+     <KEY>004</KEY>
+     <ENTRY>Please fill out all required fields.</ENTRY>
+     <LENGTH>68</LENGTH>
+    </item>
+    <item>
+     <ID>I</ID>
+     <KEY>LFE</KEY>
+     <ENTRY>LFE (frei Leistungs- und Erfüllungsort)</ENTRY>
+     <LENGTH>78</LENGTH>
+    </item>
    </TPOOL>
    <I18N_TPOOL>
     <item>
@@ -28,6 +52,30 @@
        <KEY>001</KEY>
        <ENTRY>nicht angegeben</ENTRY>
        <LENGTH>30</LENGTH>
+      </item>
+      <item>
+       <ID>I</ID>
+       <KEY>002</KEY>
+       <ENTRY>E-Mail nicht versendet. Versuchen Sie es bitte erneut.</ENTRY>
+       <LENGTH>68</LENGTH>
+      </item>
+      <item>
+       <ID>I</ID>
+       <KEY>003</KEY>
+       <ENTRY>E-Mail wurde versendet.</ENTRY>
+       <LENGTH>44</LENGTH>
+      </item>
+      <item>
+       <ID>I</ID>
+       <KEY>004</KEY>
+       <ENTRY>Bitte füllen Sie alle benötigten Felder aus.</ENTRY>
+       <LENGTH>68</LENGTH>
+      </item>
+      <item>
+       <ID>I</ID>
+       <KEY>LFE</KEY>
+       <ENTRY>LFE (frei Leistungs- und Erfüllungsort)</ENTRY>
+       <LENGTH>78</LENGTH>
       </item>
      </TEXTPOOL>
     </item>
